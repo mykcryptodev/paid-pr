@@ -174,6 +174,11 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         .filter(Boolean)
         .join(" · ")
     : null;
+  const shouldShowGitHubAuthorization =
+    installationId &&
+    !githubOAuthToken &&
+    data?.repoConfigs.length === 0 &&
+    data?.syncStatus?.reason === "missing_github_oauth_token";
   const signedInLabel =
     data?.user.github?.githubLogin ?? user?.github?.username ?? user?.id ?? "Privy user";
 
@@ -289,7 +294,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
-            {installationId && !githubOAuthToken && (
+            {shouldShowGitHubAuthorization && (
               <Button
                 variant="outline"
                 onClick={() => void reauthorize({ provider: "github" })}
