@@ -191,6 +191,20 @@ export async function getAuthenticatedGithubUser(githubOAuthToken: string) {
   };
 }
 
+export async function canAuthenticatedUserAccessRepository(input: {
+  githubOAuthToken: string;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = new Octokit({ auth: input.githubOAuthToken });
+  await octokit.repos.get({ owner, repo });
+}
+
 export async function removeRepositoryFromInstallation(input: {
   installationId: number;
   repoFullName: string;
@@ -285,12 +299,21 @@ export async function createPullRequestAsUser(input: {
   if (input.labels && input.labels.length > 0) {
     const installationOctokit = await getInstallationOctokit(input.installationId);
 
-    await installationOctokit.issues.addLabels({
-      owner,
-      repo,
-      issue_number: data.number,
-      labels: input.labels,
-    });
+    try {
+      await installationOctokit.issues.addLabels({
+        owner,
+        repo,
+        issue_number: data.number,
+        labels: input.labels,
+      });
+    } catch (error) {
+      console.error("Failed to apply labels to user-created pull request", {
+        repoFullName: input.repoFullName,
+        pullNumber: data.number,
+        labels: input.labels,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   }
 
   return data;

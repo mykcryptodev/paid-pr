@@ -5,6 +5,7 @@ import {
   getRepoConfigWithTrusted,
 } from "@/lib/db/repositories";
 import {
+  canAuthenticatedUserAccessRepository,
   createPullRequestAsUser,
   getAuthenticatedGithubUser,
 } from "@/lib/github/app";
@@ -12,6 +13,14 @@ import { getX402Server, toX402Price } from "@/lib/x402/server";
 import { createPrSchema } from "@/lib/validators/paidpr";
 
 export const runtime = "nodejs";
+
+type GithubHttpError = Error & {
+  status?: number;
+  response?: {
+    status?: number;
+    data?: unknown;
+  };
+};
 
 function decodePaymentPayload(header: string | null) {
   if (!header) {
@@ -31,6 +40,43 @@ function decodePaymentPayload(header: string | null) {
       return null;
     }
   }
+}
+
+function getGithubErrorDetails(error: unknown) {
+  if (!(error instanceof Error)) {
+    return {
+      status: 502,
+      message: "GitHub request failed.",
+      details: undefined,
+    };
+  }
+
+  const githubError = error as GithubHttpError;
+  const status = githubError.status ?? githubError.response?.status ?? 502;
+
+  return {
+    status: status >= 400 && status < 500 ? status : 502,
+    message: error.message || "GitHub request failed.",
+    details: githubError.response?.data,
+  };
+}
+
+function githubErrorResponse(error: unknown, prefix: string): NextResponse<unknown> {
+  const details = getGithubErrorDetails(error);
+
+  console.error(prefix, {
+    status: details.status,
+    message: details.message,
+    details: details.details,
+  });
+
+  return NextResponse.json(
+    {
+      error: `${prefix}: ${details.message}`,
+      github: details.details,
+    },
+    { status: details.status },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -69,39 +115,69 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const handler = async (paidRequest: NextRequest) => {
-    const pullRequest = await createPullRequestAsUser({
+  try {
+    await canAuthenticatedUserAccessRepository({
       githubOAuthToken,
-      installationId: repoConfig.githubInstallationId,
       repoFullName: parsed.data.repoFullName,
-      title: parsed.data.title,
-      body: parsed.data.body,
-      head: parsed.data.head,
-      base: parsed.data.base,
-      labels: parsed.data.labels,
-      draft: parsed.data.draft,
-      maintainerCanModify: parsed.data.maintainerCanModify,
     });
+  } catch (error) {
+    return githubErrorResponse(
+      error,
+      "GitHub cannot access the target repository with your user token",
+    );
+  }
+
+  const handler = async (paidRequest: NextRequest): Promise<NextResponse<unknown>> => {
+    let pullRequest: Awaited<ReturnType<typeof createPullRequestAsUser>>;
+
+    try {
+      pullRequest = await createPullRequestAsUser({
+        githubOAuthToken,
+        installationId: repoConfig.githubInstallationId,
+        repoFullName: parsed.data.repoFullName,
+        title: parsed.data.title,
+        body: parsed.data.body,
+        head: parsed.data.head,
+        base: parsed.data.base,
+        labels: parsed.data.labels,
+        draft: parsed.data.draft,
+        maintainerCanModify: parsed.data.maintainerCanModify,
+      });
+    } catch (error) {
+      return githubErrorResponse(
+        error,
+        "Payment verified, but GitHub could not create the PR",
+      );
+    }
+
     const paymentHeader =
       paidRequest.headers.get("payment-signature") ??
       paidRequest.headers.get("x-payment");
     const receiptPayload = decodePaymentPayload(paymentHeader);
 
-    await createPaymentReceipt({
-      txHash: (receiptPayload?.transaction as string | undefined) ?? null,
-      paymentId: paymentHeader,
-      repoFullName: parsed.data.repoFullName,
-      headRef: parsed.data.head,
-      baseRef: parsed.data.base,
-      prNumber: pullRequest.number,
-      payerAddress:
-        parsed.data.payerAddress ??
-        ((receiptPayload?.payer as string | undefined) ||
-          (receiptPayload?.from as string | undefined)) ??
-        null,
-      amountUsdc: repoConfig.priceUsdc,
-      receiptPayload,
-    });
+    try {
+      await createPaymentReceipt({
+        txHash: (receiptPayload?.transaction as string | undefined) ?? null,
+        paymentId: paymentHeader,
+        repoFullName: parsed.data.repoFullName,
+        headRef: parsed.data.head,
+        baseRef: parsed.data.base,
+        prNumber: pullRequest.number,
+        payerAddress:
+          parsed.data.payerAddress ??
+          ((receiptPayload?.payer as string | undefined) ||
+            (receiptPayload?.from as string | undefined)) ??
+          null,
+        amountUsdc: repoConfig.priceUsdc,
+        receiptPayload,
+      });
+    } catch (error) {
+      console.error("Pull request created, but failed to record payment receipt", {
+        repoFullName: parsed.data.repoFullName,
+        pullNumber: pullRequest.number,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -119,7 +195,7 @@ export async function POST(request: NextRequest) {
     });
   };
 
-  return withX402(
+  return withX402<unknown>(
     handler,
     {
       accepts: {
