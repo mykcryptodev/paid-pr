@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { useIdentityToken, usePrivy } from "@privy-io/react-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,13 +41,25 @@ type PaymentReceipt = {
 };
 
 type InstallationsResponse = {
-  user: { defaultWalletAddress?: string };
+  user: {
+    id: string;
+    github?: {
+      githubId?: number;
+      githubLogin?: string;
+    };
+    defaultWalletAddress?: string;
+  };
   repoConfigs: RepoConfig[];
   paymentReceipts: PaymentReceipt[];
 };
 
+type ErrorResponse = {
+  error?: string;
+};
+
 export function DashboardClient() {
-  const { authenticated, login, logout, ready, getAccessToken } = usePrivy();
+  const { authenticated, login, logout, ready, user } = usePrivy();
+  const { identityToken } = useIdentityToken();
   const [data, setData] = useState<InstallationsResponse | null>(null);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [priceUsdc, setPriceUsdc] = useState("0.05");
@@ -58,13 +70,11 @@ export function DashboardClient() {
   const [isLoading, setIsLoading] = useState(false);
 
   async function authFetch(path: string, init?: RequestInit) {
-    const token = await getAccessToken();
-
     return fetch(path, {
       ...init,
       headers: {
         "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(identityToken ? { "privy-id-token": identityToken } : {}),
         ...init?.headers,
       },
     });
@@ -75,22 +85,40 @@ export function DashboardClient() {
       return;
     }
 
-    setIsLoading(true);
-    const response = await authFetch("/api/github/installations");
-    const payload = (await response.json()) as InstallationsResponse;
-    setData(payload);
-    setIsLoading(false);
+    if (!identityToken) {
+      setMessage("Privy identity token is not available. Please sign out and sign in again.");
+      return;
+    }
 
-    const first = payload.repoConfigs[0];
-    if (first && !selectedRepo) {
-      setSelectedRepo(first.repoFullName);
-      setPriceUsdc(first.priceUsdc);
-      setRecipientAddress(
-        first.recipientAddress.startsWith("0x0000")
-          ? payload.user.defaultWalletAddress ?? first.recipientAddress
-          : first.recipientAddress,
-      );
-      setEnabled(first.enabled);
+    setMessage(null);
+    setIsLoading(true);
+    try {
+      const response = await authFetch("/api/github/installations");
+      const payload = (await response.json()) as InstallationsResponse | ErrorResponse;
+
+      if (!response.ok) {
+        const error =
+          "error" in payload ? payload.error : "Unable to load GitHub installations.";
+        setMessage(error ?? "Unable to load GitHub installations.");
+        return;
+      }
+
+      const data = payload as InstallationsResponse;
+      setData(data);
+
+      const first = data.repoConfigs[0];
+      if (first && !selectedRepo) {
+        setSelectedRepo(first.repoFullName);
+        setPriceUsdc(first.priceUsdc);
+        setRecipientAddress(
+          first.recipientAddress.startsWith("0x0000")
+            ? data.user.defaultWalletAddress ?? first.recipientAddress
+            : first.recipientAddress,
+        );
+        setEnabled(first.enabled);
+      }
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -98,12 +126,14 @@ export function DashboardClient() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated]);
+  }, [authenticated, identityToken]);
 
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
     [data, selectedRepo],
   );
+  const signedInLabel =
+    data?.user.github?.githubLogin ?? user?.github?.username ?? user?.id ?? "Privy user";
 
   function chooseRepo(repoFullName: string) {
     const config = data?.repoConfigs.find(
@@ -180,6 +210,14 @@ export function DashboardClient() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <Button
+            variant="outline"
+            className="w-full justify-between"
+            onClick={logout}
+          >
+            <span>Signed in as {signedInLabel}</span>
+            <span>Sign out</span>
+          </Button>
           {data?.repoConfigs.map((config) => (
             <button
               key={config.repoFullName}
@@ -204,7 +242,6 @@ export function DashboardClient() {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
-            <Button variant="ghost" onClick={logout}>Sign out</Button>
           </div>
         </CardContent>
       </Card>

@@ -1,5 +1,5 @@
 import { listInstallationsForGithubIdentity } from "@/lib/db/repositories";
-import { getGithubIdentity, requirePrivyUser } from "./server";
+import { AuthError, getGithubIdentity, requirePrivyUser } from "./server";
 
 export async function requireMaintainerForRepo(
   request: Request,
@@ -16,9 +16,7 @@ export async function requireMaintainerForRepo(
   );
 
   if (!authorizedInstallation) {
-    throw new Response("You do not manage this PaidPR repository.", {
-      status: 403,
-    });
+    throw new AuthError("You do not manage this PaidPR repository.", 403);
   }
 
   return { user, identity, installation: authorizedInstallation };
