@@ -4,6 +4,10 @@ Self-serve x402-gated GitHub pull request creation. Repo owners install one
 GitHub App, configure a per-repo USDC price and recipient wallet, and
 contributors or agents open PRs through the same paid endpoint. Deter PR slop with x402.
 
+## Demo
+
+[![PaidPR demo](https://img.youtube.com/vi/wFzG4F0oL9A/maxresdefault.jpg)](https://youtu.be/wFzG4F0oL9A)
+
 ## Getting Started
 
 Install dependencies and copy the env template:
