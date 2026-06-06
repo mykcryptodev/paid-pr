@@ -1,7 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import {
+  useConnectWallet,
+  usePrivy,
+  useWallets,
+  useX402Fetch,
+} from "@privy-io/react-auth";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +47,11 @@ type PrOptionsResponse = {
     fullName: string;
     defaultBranch: string;
   };
+  payment: {
+    priceUsdc: string;
+    recipientAddress: string;
+    network: string;
+  };
   baseBranches: BranchOption[];
   sourceRepositories: SourceRepositoryOption[];
   selectedSourceRepo: string;
@@ -59,27 +70,71 @@ type ErrorResponse = {
 };
 
 const repoFullNamePattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const customBranchValue = "__paidpr_custom_branch__";
+
+function getInitialLabels(searchParams: URLSearchParams) {
+  return [
+    searchParams.get("labels"),
+    ...searchParams.getAll("label"),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(", ");
+}
+
+function toUsdcBaseUnits(priceUsdc: string) {
+  const [whole = "0", fractional = ""] = priceUsdc.split(".");
+  return (
+    BigInt(whole) * BigInt(1_000_000) +
+    BigInt(fractional.padEnd(6, "0").slice(0, 6))
+  );
+}
+
+function truncateAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
 export function CreatePrClient() {
   const searchParams = useSearchParams();
+  const { authenticated, login, ready } = usePrivy();
+  const { connectWallet } = useConnectWallet();
+  const { wallets } = useWallets();
+  const { wrapFetchWithPayment } = useX402Fetch();
+  const initialHead = searchParams.get("head") ?? searchParams.get("branch") ?? "";
+  const hasInitialBase = searchParams.has("base");
   const [repoFullName, setRepoFullName] = useState(searchParams.get("repo") ?? "");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [labels, setLabels] = useState("");
-  const [head, setHead] = useState("");
-  const [base, setBase] = useState("main");
+  const [title, setTitle] = useState(searchParams.get("title") ?? "");
+  const [body, setBody] = useState(searchParams.get("body") ?? "");
+  const [labels, setLabels] = useState(getInitialLabels(searchParams));
+  const [head, setHead] = useState(initialHead);
+  const [base, setBase] = useState(searchParams.get("base") ?? "main");
   const [repoResults, setRepoResults] = useState<RepoSearchResponse["repositories"]>(
     [],
   );
-  const [sourceRepoFullName, setSourceRepoFullName] = useState("");
+  const [sourceRepoFullName, setSourceRepoFullName] = useState(
+    searchParams.get("sourceRepo") ?? "",
+  );
   const [prOptions, setPrOptions] = useState<PrOptionsResponse | null>(null);
   const [optionsMessage, setOptionsMessage] = useState<string | null>(null);
   const [isSearchingRepos, setIsSearchingRepos] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
-  const [payerAddress, setPayerAddress] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [challenge, setChallenge] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const selectedWalletAddress = useMemo(
+    () => wallets.find((wallet) => wallet.address)?.address ?? "",
+    [wallets],
+  );
+  const matchingHeadOption = prOptions?.sourceBranches.some(
+    (branch) => branch.head === head,
+  );
+  const matchingBaseOption = prOptions?.baseBranches.some(
+    (branch) => branch.name === base,
+  );
+  const headSelectValue = matchingHeadOption ? head : customBranchValue;
+  const baseSelectValue = matchingBaseOption ? base : customBranchValue;
+  const showManualHead =
+    !prOptions?.sourceBranches.length || headSelectValue === customBranchValue;
+  const showManualBase =
+    !prOptions?.baseBranches.length || baseSelectValue === customBranchValue;
 
   function parseLabels(value: string) {
     return value
@@ -149,11 +204,16 @@ export function CreatePrClient() {
       setPrOptions(options);
       setSourceRepoFullName(options.selectedSourceRepo);
 
-      if (!base || !options.baseBranches.some((branch) => branch.name === base)) {
+      if (
+        !base ||
+        (!hasInitialBase &&
+          base === "main" &&
+          !options.baseBranches.some((branch) => branch.name === base))
+      ) {
         setBase(defaultBase);
       }
 
-      if (!head || !options.sourceBranches.some((branch) => branch.head === head)) {
+      if (!head) {
         setHead(firstHeadBranch?.head ?? "");
       }
 
@@ -177,7 +237,7 @@ export function CreatePrClient() {
     }
 
     const timeout = window.setTimeout(() => {
-      void loadPrOptions(repo);
+      void loadPrOptions(repo, sourceRepoFullName);
     }, 400);
 
     return () => window.clearTimeout(timeout);
@@ -210,43 +270,58 @@ export function CreatePrClient() {
   async function submit() {
     setIsSubmitting(true);
     setMessage(null);
-    setChallenge(null);
 
-    const response = await fetch("/api/create-pr", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        repoFullName,
-        title,
-        body,
-        head,
-        base,
-        labels: parseLabels(labels),
-        payerAddress: payerAddress || undefined,
-      }),
-    });
-
-    const paymentRequired = response.headers.get("PAYMENT-REQUIRED");
-
-    if (response.status === 402 && paymentRequired) {
-      setChallenge(paymentRequired);
-      setMessage(
-        "Payment required. Retry this request with an x402-capable wallet/client to open the PR.",
-      );
+    if (!selectedWalletAddress) {
+      setMessage("Connect a wallet before paying for the PR.");
       setIsSubmitting(false);
       return;
     }
 
-    const payload = await response.json().catch(() => null);
+    try {
+      const fetchWithPayment = wrapFetchWithPayment({
+        fetch,
+        walletAddress: selectedWalletAddress,
+        ...(prOptions
+          ? { maxValue: toUsdcBaseUnits(prOptions.payment.priceUsdc) }
+          : {}),
+      });
 
-    if (!response.ok) {
-      setMessage(payload?.error ?? "Unable to create PR.");
+      const response = await fetchWithPayment("/api/create-pr", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          repoFullName,
+          title,
+          body,
+          head,
+          base,
+          labels: parseLabels(labels),
+          payerAddress: selectedWalletAddress,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setMessage(payload?.error ?? "Unable to create PR.");
+        return;
+      }
+
+      setMessage(`Pull request opened: ${payload.pullRequest.url}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to pay and create PR.");
+    } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function connectPayerWallet() {
+    if (!authenticated) {
+      login({ loginMethods: ["wallet"] });
       return;
     }
 
-    setMessage(`Pull request opened: ${payload.pullRequest.url}`);
-    setIsSubmitting(false);
+    connectWallet();
   }
 
   return (
@@ -262,8 +337,8 @@ export function CreatePrClient() {
           <div>
             <h2 className="font-medium">1. Choose the target repository</h2>
             <p className="text-sm text-muted-foreground">
-              Search enabled PaidPR repositories, or use a prefilled{" "}
-              <span className="font-mono">?repo=owner/name</span> URL.
+              Search enabled PaidPR repositories, or use{" "}
+              <span className="font-mono">?repo=owner/name&amp;branch=feature</span>.
             </p>
           </div>
           <div className="space-y-2">
@@ -322,39 +397,67 @@ export function CreatePrClient() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Head branch</Label>
-              <Input
-                list="paidpr-head-branches"
-                placeholder={
-                  sourceRepoFullName && sourceRepoFullName !== repoFullName
-                    ? "fork-owner:branch"
-                    : "branch"
-                }
-                value={head}
-                onChange={(event) => setHead(event.target.value)}
-              />
-              <datalist id="paidpr-head-branches">
-                {prOptions?.sourceBranches.map((branch) => (
-                  <option key={branch.head} value={branch.head}>
-                    {branch.name}
-                    {branch.isDefault ? " (default)" : ""}
-                  </option>
-                ))}
-              </datalist>
+              {prOptions?.sourceBranches.length ? (
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={headSelectValue}
+                  onChange={(event) => {
+                    if (event.target.value === customBranchValue) {
+                      setHead(matchingHeadOption ? "" : head);
+                      return;
+                    }
+
+                    setHead(event.target.value);
+                  }}
+                >
+                  {prOptions.sourceBranches.map((branch) => (
+                    <option key={branch.head} value={branch.head}>
+                      {branch.head}
+                      {branch.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                  <option value={customBranchValue}>Custom ref...</option>
+                </select>
+              ) : null}
+              {showManualHead && (
+                <Input
+                  placeholder={
+                    sourceRepoFullName && sourceRepoFullName !== repoFullName
+                      ? "fork-owner:branch"
+                      : "branch"
+                  }
+                  value={head}
+                  onChange={(event) => setHead(event.target.value)}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Base branch</Label>
-              <Input
-                list="paidpr-base-branches"
-                value={base}
-                onChange={(event) => setBase(event.target.value)}
-              />
-              <datalist id="paidpr-base-branches">
-                {prOptions?.baseBranches.map((branch) => (
-                  <option key={branch.name} value={branch.name}>
-                    {branch.isDefault ? "default" : ""}
-                  </option>
-                ))}
-              </datalist>
+              {prOptions?.baseBranches.length ? (
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={baseSelectValue}
+                  onChange={(event) => {
+                    if (event.target.value === customBranchValue) {
+                      setBase(matchingBaseOption ? "" : base);
+                      return;
+                    }
+
+                    setBase(event.target.value);
+                  }}
+                >
+                  {prOptions.baseBranches.map((branch) => (
+                    <option key={branch.name} value={branch.name}>
+                      {branch.name}
+                      {branch.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                  <option value={customBranchValue}>Custom branch...</option>
+                </select>
+              ) : null}
+              {showManualBase && (
+                <Input value={base} onChange={(event) => setBase(event.target.value)} />
+              )}
             </div>
           </div>
           {optionsMessage && (
@@ -409,16 +512,40 @@ export function CreatePrClient() {
           <div>
             <h2 className="font-medium">4. Pay and open the PR</h2>
             <p className="text-sm text-muted-foreground">
-              The request still goes through the x402-gated PR creation API.
+              The request goes through the same x402-gated PR creation API.
             </p>
           </div>
-          <div className="space-y-2">
-            <Label>Payer wallet</Label>
-            <Input
-              placeholder="0x..."
-              value={payerAddress}
-              onChange={(event) => setPayerAddress(event.target.value)}
-            />
+          {prOptions?.payment && (
+            <div className="rounded-lg border bg-muted p-3 text-sm">
+              <p>
+                Cost:{" "}
+                <span className="font-medium">
+                  {prOptions.payment.priceUsdc} USDC
+                </span>{" "}
+                on <span className="font-mono">{prOptions.payment.network}</span>
+              </p>
+              <p className="mt-1 break-all text-muted-foreground">
+                Recipient: {prOptions.payment.recipientAddress}
+              </p>
+            </div>
+          )}
+          <div className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Payer wallet</p>
+              <p className="text-sm text-muted-foreground">
+                {selectedWalletAddress
+                  ? truncateAddress(selectedWalletAddress)
+                  : "No wallet connected"}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!ready}
+              onClick={connectPayerWallet}
+            >
+              {selectedWalletAddress ? "Change wallet" : "Connect wallet"}
+            </Button>
           </div>
           {message && (
             <Alert>
@@ -426,14 +553,11 @@ export function CreatePrClient() {
               <AlertDescription>{message}</AlertDescription>
             </Alert>
           )}
-          {challenge && (
-            <pre className="max-h-48 overflow-auto rounded-lg border bg-muted p-3 text-xs">
-              {challenge}
-            </pre>
-          )}
           <Button
             onClick={() => void submit()}
-            disabled={isSubmitting || !repoFullName || !title || !head || !base}
+            disabled={
+              isSubmitting || !repoFullName || !title || !head || !base || !selectedWalletAddress
+            }
           >
             {isSubmitting ? "Submitting..." : "Pay and open PR"}
           </Button>

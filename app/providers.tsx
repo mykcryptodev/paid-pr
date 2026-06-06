@@ -19,7 +19,7 @@ export function Providers({ children }: { children: ReactNode }) {
           accentColor: "#fafafa",
           logo: "/images/logo-icon.png",
         },
-        loginMethods: ["github"],
+        loginMethods: ["github", "wallet"],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",

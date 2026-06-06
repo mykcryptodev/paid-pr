@@ -37,7 +37,8 @@ GitHub App:
 
 Privy:
 
-- Enable GitHub login only (disable email and wallet in the Privy dashboard).
+- Enable GitHub and wallet login. Maintainers use GitHub for repository
+  management, while contributors connect an EVM wallet for x402 payments.
 - Configure GitHub OAuth to request the classic `repo` scope; GitHub requires it
   when removing a selected repository from an app installation.
 - Env: `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`
@@ -60,9 +61,12 @@ Maintainer:
 
 Human contributor:
 
-1. Visit `/create?repo=owner/repo`.
-2. Enter PR title, body, head branch, and base branch.
-3. Submit with an x402-capable client or use the returned 402 challenge.
+1. Visit `/create?repo=owner/repo`, optionally with `&branch=feature`,
+   `&head=fork-owner:branch`, `&base=main`, or `&sourceRepo=owner/fork`.
+2. Enter PR title and body, then select source and base branches from the
+   dropdowns or keep the prefilled URL branch.
+3. Connect a funded EVM wallet and pay the displayed x402 cost in-page. PaidPR
+   opens the GitHub PR after the payment verifies.
 
 Agent/CLI:
 

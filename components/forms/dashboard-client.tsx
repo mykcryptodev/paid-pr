@@ -80,6 +80,8 @@ type DashboardClientProps = {
 export function DashboardClient({ installationId }: DashboardClientProps) {
   const { authenticated, getAccessToken, login, logout, ready, user } = usePrivy();
   const { identityToken } = useIdentityToken();
+  const githubAppName = process.env.NEXT_PUBLIC_GITHUB_APP_NAME ?? "paid-pr";
+  const githubInstallUrl = `https://github.com/apps/${githubAppName}/installations/new`;
   const [data, setData] = useState<InstallationsResponse | null>(null);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [priceUsdc, setPriceUsdc] = useState("0.05");
@@ -349,10 +351,15 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           {data?.repoConfigs.length === 0 && (
             <Alert>
               <AlertTitle>No repos yet</AlertTitle>
-              <AlertDescription>
+              <AlertDescription className="space-y-3">
+                <span className="block">
                 Install the GitHub App, then refresh this dashboard. For organization
                 installs, authorize GitHub here so PaidPR can verify your org admin
                 access.
+                </span>
+                <Button asChild size="sm">
+                  <a href={githubInstallUrl}>Install GitHub App</a>
+                </Button>
                 {syncDetail ? (
                   <span className="mt-2 block font-mono text-xs">{syncDetail}</span>
                 ) : null}

@@ -85,6 +85,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     repository,
+    payment: {
+      priceUsdc: repoConfig.priceUsdc,
+      recipientAddress: repoConfig.recipientAddress,
+      network: process.env.X402_NETWORK ?? "eip155:84532",
+    },
     baseBranches: baseBranches.map((branch) => ({
       name: branch,
       isDefault: branch === repository.defaultBranch,
