@@ -67,6 +67,86 @@ export async function listInstallationRepositories(installationId: number) {
     .filter((repo): repo is string => Boolean(repo));
 }
 
+export async function getRepositoryMetadata(input: {
+  installationId: number;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = await getInstallationOctokit(input.installationId);
+  const { data } = await octokit.repos.get({ owner, repo });
+
+  return {
+    fullName: data.full_name,
+    defaultBranch: data.default_branch,
+  };
+}
+
+export async function listRepositoryBranches(input: {
+  installationId: number;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = await getInstallationOctokit(input.installationId);
+  const branches = (await octokit.paginate(octokit.repos.listBranches, {
+    owner,
+    repo,
+    per_page: 100,
+  })) as Array<{ name?: string }>;
+
+  return branches
+    .map((branch) => branch.name)
+    .filter((branch): branch is string => Boolean(branch));
+}
+
+export async function listRepositoryForks(input: {
+  installationId: number;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = await getInstallationOctokit(input.installationId);
+  const forks = (await octokit.paginate(octokit.repos.listForks, {
+    owner,
+    repo,
+    per_page: 100,
+    sort: "newest",
+  })) as Array<{
+    full_name?: string;
+    default_branch?: string;
+    owner?: { login?: string | null } | null;
+  }>;
+
+  return forks
+    .map((fork) => ({
+      fullName: fork.full_name,
+      ownerLogin: fork.owner?.login ?? null,
+      defaultBranch: fork.default_branch,
+    }))
+    .filter(
+      (
+        fork,
+      ): fork is {
+        fullName: string;
+        ownerLogin: string | null;
+        defaultBranch: string;
+      } => Boolean(fork.fullName && fork.defaultBranch),
+    );
+}
+
 export async function removeRepositoryFromInstallation(input: {
   installationId: number;
   repoFullName: string;
