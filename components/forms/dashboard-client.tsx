@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useIdentityToken, usePrivy } from "@privy-io/react-auth";
+import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,11 @@ type ErrorResponse = {
   error?: string;
 };
 
-export function DashboardClient() {
+type DashboardClientProps = {
+  installationId?: string;
+};
+
+export function DashboardClient({ installationId }: DashboardClientProps) {
   const { authenticated, login, logout, ready, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const [data, setData] = useState<InstallationsResponse | null>(null);
@@ -68,6 +72,15 @@ export function DashboardClient() {
   const [trustedContributors, setTrustedContributors] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
+
+  const { reauthorize } = useOAuthTokens({
+    onOAuthTokenGrant: ({ oAuthTokens }) => {
+      if (oAuthTokens.provider === "github") {
+        setGithubOAuthToken(oAuthTokens.accessToken);
+      }
+    },
+  });
 
   async function authFetch(path: string, init?: RequestInit) {
     return fetch(path, {
@@ -75,6 +88,7 @@ export function DashboardClient() {
       headers: {
         "content-type": "application/json",
         ...(identityToken ? { "privy-id-token": identityToken } : {}),
+        ...(githubOAuthToken ? { "github-oauth-token": githubOAuthToken } : {}),
         ...init?.headers,
       },
     });
@@ -93,7 +107,15 @@ export function DashboardClient() {
     setMessage(null);
     setIsLoading(true);
     try {
-      const response = await authFetch("/api/github/installations");
+      const params = new URLSearchParams();
+
+      if (installationId) {
+        params.set("installation_id", installationId);
+      }
+
+      const response = await authFetch(
+        `/api/github/installations${params.size ? `?${params.toString()}` : ""}`,
+      );
       const payload = (await response.json()) as InstallationsResponse | ErrorResponse;
 
       if (!response.ok) {
@@ -126,7 +148,7 @@ export function DashboardClient() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated, identityToken]);
+  }, [authenticated, identityToken, installationId]);
 
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
@@ -242,6 +264,14 @@ export function DashboardClient() {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
+            {installationId && !githubOAuthToken && (
+              <Button
+                variant="outline"
+                onClick={() => void reauthorize({ provider: "github" })}
+              >
+                Authorize GitHub
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

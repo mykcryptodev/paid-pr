@@ -1,6 +1,11 @@
 import { Webhooks } from "@octokit/webhooks";
 import { env } from "@/lib/env";
-import { ensureRepoConfigs, upsertInstallation } from "@/lib/db/repositories";
+import {
+  ensureRepoConfigs,
+  getInstallationByInstallationId,
+  upsertInstallation,
+} from "@/lib/db/repositories";
+import { listInstallationRepositories } from "@/lib/github/app";
 
 type InstallationLike = {
   id: number;
@@ -41,6 +46,7 @@ export function getWebhookHeaders(request: Request) {
 }
 
 export async function syncInstallationFromWebhook(payload: {
+  action?: string;
   installation?: InstallationLike;
   sender?: SenderLike;
   repositories?: RepositoryLike[];
@@ -53,12 +59,36 @@ export async function syncInstallationFromWebhook(payload: {
     return null;
   }
 
-  const repos = [
-    ...(payload.repositories ?? []),
-    ...(payload.repositories_added ?? []),
-  ]
+  if (payload.action === "deleted") {
+    return null;
+  }
+
+  let repos = (payload.repositories ?? [])
     .map((repo) => repo.full_name)
     .filter((repo): repo is string => Boolean(repo));
+  const reposAdded = (payload.repositories_added ?? [])
+    .map((repo) => repo.full_name)
+    .filter((repo): repo is string => Boolean(repo));
+  const reposRemoved = new Set(
+    (payload.repositories_removed ?? [])
+      .map((repo) => repo.full_name)
+      .filter((repo): repo is string => Boolean(repo)),
+  );
+
+  if (!payload.repositories && (reposAdded.length > 0 || reposRemoved.size > 0)) {
+    const existing = await getInstallationByInstallationId(installation.id);
+    const mergedRepos = new Set([...(existing?.repositories ?? []), ...reposAdded]);
+
+    for (const repo of reposRemoved) {
+      mergedRepos.delete(repo);
+    }
+
+    repos = [...mergedRepos].sort();
+  }
+
+  if (repos.length === 0) {
+    repos = await listInstallationRepositories(installation.id);
+  }
 
   const row = await upsertInstallation(
     {

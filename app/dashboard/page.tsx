@@ -3,7 +3,13 @@ import { Logo } from "@/components/brand/logo";
 import { DashboardClient } from "@/components/forms/dashboard-client";
 import { Button } from "@/components/ui/button";
 
-export default function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ installation_id?: string }>;
+}) {
+  const { installation_id: installationId } = await searchParams;
+
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-10">
       <div className="flex items-center justify-between gap-4">
@@ -18,7 +24,7 @@ export default function DashboardPage() {
           <Link href="/">Home</Link>
         </Button>
       </div>
-      <DashboardClient />
+      <DashboardClient installationId={installationId} />
     </main>
   );
 }

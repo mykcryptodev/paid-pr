@@ -42,6 +42,16 @@ export async function upsertInstallation(
   return row;
 }
 
+export async function getInstallationByInstallationId(installationId: number) {
+  const [row] = await getDb()
+    .select()
+    .from(githubInstallations)
+    .where(eq(githubInstallations.installationId, installationId))
+    .limit(1);
+
+  return row ?? null;
+}
+
 export async function ensureRepoConfigs(
   installationId: number,
   repos: string[],

@@ -10,11 +10,21 @@ import {
   getGithubIdentity,
   requirePrivyUser,
 } from "@/lib/privy/server";
+import { syncInstallationForGithubIdentity } from "@/lib/github/installations";
 
 export async function GET(request: Request) {
   try {
     const user = await requirePrivyUser(request);
     const identity = getGithubIdentity(user);
+    const url = new URL(request.url);
+    const installationId = Number(url.searchParams.get("installation_id"));
+
+    if (Number.isSafeInteger(installationId) && installationId > 0) {
+      await syncInstallationForGithubIdentity(installationId, identity, {
+        githubOAuthToken: request.headers.get("github-oauth-token"),
+      });
+    }
+
     const installations = await listInstallationsForGithubIdentity(
       identity.githubId,
       identity.githubLogin,
