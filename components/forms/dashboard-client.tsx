@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
+import { CircleHelp } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type RepoConfig = {
   repoFullName: string;
@@ -333,10 +339,41 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Input value={recipientAddress} onChange={(event) => setRecipientAddress(event.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Trusted contributor wallets</Label>
+            <div className="flex items-center gap-1.5">
+              <Label>Trusted contributor wallets</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label="How trusted contributor wallets work"
+                  >
+                    <CircleHelp className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-sm text-left">
+                  Wallets on this list can open PRs directly on GitHub without
+                  paying. They must include a matching{" "}
+                  <span className="font-mono">PaidPR-Trusted-Wallet</span> line
+                  in the PR description.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Allowlisted wallets bypass x402 enforcement for PRs opened on
+              GitHub. Add one EVM address per line. The contributor must include
+              this in the PR description:
+            </p>
+            <p className="rounded-md border bg-muted px-3 py-2 font-mono text-xs">
+              PaidPR-Trusted-Wallet: 0xYourWalletAddress
+            </p>
+            <p className="text-sm text-muted-foreground">
+              This only applies to PRs opened on GitHub. PRs created through
+              PaidPR&apos;s paid API still require payment.
+            </p>
             <textarea
               className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-              placeholder="One wallet address per line"
+              placeholder="0xabc...\n0xdef..."
               value={trustedContributors}
               onChange={(event) => setTrustedContributors(event.target.value)}
             />
