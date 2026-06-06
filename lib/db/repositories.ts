@@ -85,6 +85,38 @@ export async function ensureRepoConfigs(
     .returning();
 }
 
+export async function removeRepoFromInstallation(
+  installationId: number,
+  repoFullName: string,
+) {
+  const installation = await getInstallationByInstallationId(installationId);
+
+  if (!installation) {
+    return null;
+  }
+
+  const updatedRepos = installation.repositories.filter(
+    (repo) => repo !== repoFullName,
+  );
+
+  const [row] = await getDb()
+    .update(githubInstallations)
+    .set({
+      repositories: updatedRepos,
+      updatedAt: new Date(),
+    })
+    .where(eq(githubInstallations.installationId, installationId))
+    .returning();
+
+  if (!row) {
+    return null;
+  }
+
+  await syncRepoConfigsForInstallation(installationId, updatedRepos);
+
+  return row;
+}
+
 export async function syncRepoConfigsForInstallation(
   installationId: number,
   repos: string[],

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const [trustedContributors, setTrustedContributors] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [uninstallingRepo, setUninstallingRepo] = useState<string | null>(null);
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
 
   const { reauthorize } = useOAuthTokens({
@@ -204,6 +205,42 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     setTrustedContributors("");
   }
 
+  async function uninstallRepo(repoFullName: string) {
+    const confirmed = window.confirm(
+      `Uninstall PaidPR from ${repoFullName}? The app will lose access to this repository.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMessage(null);
+    setUninstallingRepo(repoFullName);
+
+    try {
+      const response = await authFetch(
+        `/api/github/installations/repo?repo=${encodeURIComponent(repoFullName)}`,
+        { method: "DELETE" },
+      );
+      const payload = (await response.json()) as ErrorResponse;
+
+      if (!response.ok) {
+        setMessage(payload.error ?? "Unable to uninstall repository.");
+        return;
+      }
+
+      if (selectedRepo === repoFullName) {
+        setSelectedRepo("");
+        setTrustedContributors("");
+      }
+
+      setMessage(`Uninstalled PaidPR from ${repoFullName}.`);
+      await load();
+    } finally {
+      setUninstallingRepo(null);
+    }
+  }
+
   async function saveConfig() {
     setMessage(null);
     const response = await authFetch("/api/config", {
@@ -272,16 +309,35 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <span>Sign out</span>
           </Button>
           {data?.repoConfigs.map((config) => (
-            <button
+            <div
               key={config.repoFullName}
-              onClick={() => chooseRepo(config.repoFullName)}
-              className="flex w-full items-center justify-between rounded-lg border p-3 text-left hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-lg border p-3"
             >
-              <span className="font-medium">{config.repoFullName}</span>
-              <Badge variant={config.enabled ? "default" : "secondary"}>
-                {config.enabled ? "Enabled" : "Disabled"}
-              </Badge>
-            </button>
+              <button
+                type="button"
+                onClick={() => chooseRepo(config.repoFullName)}
+                className="flex min-w-0 flex-1 items-center justify-between text-left hover:opacity-80"
+              >
+                <span className="truncate font-medium">{config.repoFullName}</span>
+                <Badge
+                  variant={config.enabled ? "default" : "secondary"}
+                  className="ml-2 shrink-0"
+                >
+                  {config.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+                disabled={uninstallingRepo === config.repoFullName}
+                aria-label={`Uninstall PaidPR from ${config.repoFullName}`}
+                onClick={() => void uninstallRepo(config.repoFullName)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           ))}
           {data?.repoConfigs.length === 0 && (
             <Alert>

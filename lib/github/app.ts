@@ -67,6 +67,24 @@ export async function listInstallationRepositories(installationId: number) {
     .filter((repo): repo is string => Boolean(repo));
 }
 
+export async function removeRepositoryFromInstallation(input: {
+  installationId: number;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = await getInstallationOctokit(input.installationId);
+  const { data: repository } = await octokit.repos.get({ owner, repo });
+
+  await octokit.request("DELETE /installation/repositories", {
+    repository_ids: [repository.id],
+  });
+}
+
 export async function createPullRequest(input: {
   installationId: number;
   repoFullName: string;
