@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
-import { CircleHelp, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,12 +24,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-
 type RepoConfig = {
   repoFullName: string;
   priceUsdc: string;
@@ -395,26 +389,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Input value={recipientAddress} onChange={(event) => setRecipientAddress(event.target.value)} />
           </div>
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5">
-              <Label>Trusted contributor wallets</Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
-                    aria-label="How trusted contributor wallets work"
-                  >
-                    <CircleHelp className="size-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-sm text-left">
-                  Wallets on this list can open PRs directly on GitHub without
-                  paying. They must include a matching{" "}
-                  <span className="font-mono">PaidPR-Trusted-Wallet</span> line
-                  in the PR description.
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <Label>Trusted contributor wallets</Label>
             <p className="text-sm text-muted-foreground">
               Allowlisted wallets bypass x402 enforcement for PRs opened on
               GitHub. Add one EVM address per line. The contributor must include
