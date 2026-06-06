@@ -40,13 +40,16 @@ export function getAuthToken(request: Request) {
   const identityToken = request.headers.get("privy-id-token");
 
   if (identityToken) {
-    return identityToken;
+    return { token: identityToken, type: "identity" as const };
   }
 
   const authorization = request.headers.get("authorization");
 
   if (authorization?.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice("bearer ".length).trim();
+    return {
+      token: authorization.slice("bearer ".length).trim(),
+      type: "auth" as const,
+    };
   }
 
   const cookie = request.headers
@@ -55,18 +58,28 @@ export function getAuthToken(request: Request) {
     .map((part) => part.trim())
     .find((part) => part.startsWith("privy-id-token="));
 
-  return cookie ? decodeURIComponent(cookie.split("=").slice(1).join("=")) : null;
+  return cookie
+    ? {
+        token: decodeURIComponent(cookie.split("=").slice(1).join("=")),
+        type: "identity" as const,
+      }
+    : null;
 }
 
 export async function requirePrivyUser(request: Request) {
-  const token = getAuthToken(request);
+  const authToken = getAuthToken(request);
 
-  if (!token) {
+  if (!authToken) {
     throw new AuthError("Missing Privy token");
   }
 
   try {
-    const user = await getPrivyClient().getUser({ idToken: token });
+    if (authToken.type === "auth") {
+      const claims = await getPrivyClient().verifyAuthToken(authToken.token);
+      return await getPrivyClient().getUserById(claims.userId);
+    }
+
+    const user = await getPrivyClient().getUser({ idToken: authToken.token });
 
     if (getGithubIdentity(user).githubId || getGithubIdentity(user).githubLogin) {
       return user;

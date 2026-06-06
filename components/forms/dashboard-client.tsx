@@ -69,7 +69,7 @@ type DashboardClientProps = {
 };
 
 export function DashboardClient({ installationId }: DashboardClientProps) {
-  const { authenticated, login, logout, ready, user } = usePrivy();
+  const { authenticated, getAccessToken, login, logout, ready, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const [data, setData] = useState<InstallationsResponse | null>(null);
   const [selectedRepo, setSelectedRepo] = useState("");
@@ -91,11 +91,14 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   });
 
   async function authFetch(path: string, init?: RequestInit) {
+    const accessToken = identityToken ? null : await getAccessToken();
+
     return fetch(path, {
       ...init,
       headers: {
         "content-type": "application/json",
         ...(identityToken ? { "privy-id-token": identityToken } : {}),
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
         ...(githubOAuthToken ? { "github-oauth-token": githubOAuthToken } : {}),
         ...init?.headers,
       },
@@ -104,11 +107,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
 
   async function load() {
     if (!authenticated) {
-      return;
-    }
-
-    if (!identityToken) {
-      setMessage("Privy identity token is not available. Please sign out and sign in again.");
       return;
     }
 

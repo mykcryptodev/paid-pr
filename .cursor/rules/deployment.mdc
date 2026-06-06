@@ -1,0 +1,10 @@
+---
+description: Deployment workflow for this repo
+alwaysApply: true
+---
+
+# Deployment Workflow
+
+- GitHub is connected to Vercel for this repository.
+- When the user asks to update production or deploy a change, push the requested git branch/commit to GitHub and Vercel will auto-deploy it.
+- Do not commit or push unless the user explicitly asks for it.
