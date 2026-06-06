@@ -51,6 +51,13 @@ type InstallationsResponse = {
   };
   repoConfigs: RepoConfig[];
   paymentReceipts: PaymentReceipt[];
+  syncStatus?: {
+    synced: boolean;
+    reason?: string;
+    accountLogin?: string;
+    accountType?: string;
+    repoCount?: number;
+  };
 };
 
 type ErrorResponse = {
@@ -78,6 +85,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
+        setMessage("GitHub authorized. Refreshing repositories...");
       }
     },
   });
@@ -148,12 +156,26 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated, identityToken, installationId]);
+  }, [authenticated, identityToken, installationId, githubOAuthToken]);
 
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
     [data, selectedRepo],
   );
+  const syncDetail = data?.syncStatus
+    ? [
+        `sync=${data.syncStatus.reason ?? (data.syncStatus.synced ? "synced" : "not_synced")}`,
+        data.syncStatus.accountLogin
+          ? `account=${data.syncStatus.accountLogin}`
+          : undefined,
+        data.syncStatus.accountType ? `type=${data.syncStatus.accountType}` : undefined,
+        data.syncStatus.repoCount !== undefined
+          ? `repos=${data.syncStatus.repoCount}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
   const signedInLabel =
     data?.user.github?.githubLogin ?? user?.github?.username ?? user?.id ?? "Privy user";
 
@@ -256,7 +278,12 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Alert>
               <AlertTitle>No repos yet</AlertTitle>
               <AlertDescription>
-                Install the GitHub App, then refresh this dashboard.
+                Install the GitHub App, then refresh this dashboard. For organization
+                installs, authorize GitHub here so PaidPR can verify your org admin
+                access.
+                {syncDetail ? (
+                  <span className="mt-2 block font-mono text-xs">{syncDetail}</span>
+                ) : null}
               </AlertDescription>
             </Alert>
           )}

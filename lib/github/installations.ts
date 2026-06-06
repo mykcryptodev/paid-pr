@@ -44,7 +44,7 @@ async function canManageOrganizationInstallation(input: {
   organizationLogin?: string;
 }) {
   if (!input.githubOAuthToken || !input.organizationLogin) {
-    return false;
+    return { authorized: false, reason: "missing_github_oauth_token" };
   }
 
   const octokit = new Octokit({ auth: input.githubOAuthToken });
@@ -57,13 +57,17 @@ async function canManageOrganizationInstallation(input: {
       }),
     ]);
 
-    return (
+    const authorized =
       identityMatchesGithubUser(input.identity, githubUser) &&
       membership.state === "active" &&
-      membership.role === "admin"
-    );
+      membership.role === "admin";
+
+    return {
+      authorized,
+      reason: authorized ? "authorized" : "not_org_admin",
+    };
   } catch {
-    return false;
+    return { authorized: false, reason: "github_org_membership_check_failed" };
   }
 }
 
@@ -78,19 +82,27 @@ export async function syncInstallationForGithubIdentity(
     identity,
     installation.account,
   );
-  const canSyncOrganizationInstallation = await canManageOrganizationInstallation({
+  const organizationAuthorization = await canManageOrganizationInstallation({
     githubOAuthToken: options.githubOAuthToken,
     identity,
     organizationLogin:
       accountType === "organization" ? installation.account?.login : undefined,
   });
 
-  if (!canSyncPersonalInstallation && !canSyncOrganizationInstallation) {
-    return null;
+  if (!canSyncPersonalInstallation && !organizationAuthorization.authorized) {
+    return {
+      synced: false,
+      accountLogin: installation.account?.login,
+      accountType: installation.account?.type,
+      reason:
+        accountType === "organization"
+          ? organizationAuthorization.reason
+          : "github_identity_does_not_match_installation",
+    };
   }
 
   if (!installation.account?.id || !installation.account.login) {
-    return null;
+    return { synced: false, reason: "missing_installation_account" };
   }
 
   const repos = await listInstallationRepositories(installationId);
@@ -108,5 +120,11 @@ export async function syncInstallationForGithubIdentity(
 
   await ensureRepoConfigs(row.installationId, repos);
 
-  return row;
+  return {
+    synced: true,
+    accountLogin: installation.account.login,
+    accountType: installation.account.type,
+    repoCount: repos.length,
+    reason: "synced",
+  };
 }

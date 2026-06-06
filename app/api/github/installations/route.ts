@@ -18,9 +18,15 @@ export async function GET(request: Request) {
     const identity = getGithubIdentity(user);
     const url = new URL(request.url);
     const installationId = Number(url.searchParams.get("installation_id"));
+    let syncStatus:
+      | Awaited<ReturnType<typeof syncInstallationForGithubIdentity>>
+      | {
+          synced: false;
+          reason: "missing_installation_id";
+        } = { synced: false, reason: "missing_installation_id" };
 
     if (Number.isSafeInteger(installationId) && installationId > 0) {
-      await syncInstallationForGithubIdentity(installationId, identity, {
+      syncStatus = await syncInstallationForGithubIdentity(installationId, identity, {
         githubOAuthToken: request.headers.get("github-oauth-token"),
       });
     }
@@ -45,6 +51,7 @@ export async function GET(request: Request) {
       installations,
       repoConfigs: configs,
       paymentReceipts: receipts,
+      syncStatus,
     });
   } catch (error) {
     const response = authErrorResponse(error);
