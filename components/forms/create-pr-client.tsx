@@ -76,6 +76,7 @@ type ErrorResponse = {
 
 const repoFullNamePattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const customBranchValue = "__paidpr_custom_branch__";
+const githubTokenStorageKey = "paidpr.githubOAuthToken";
 
 function getInitialLabels(searchParams: URLSearchParams) {
   return [
@@ -96,6 +97,34 @@ function toUsdcBaseUnits(priceUsdc: string) {
 
 function truncateAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function readStoredGithubToken(githubLogin?: string) {
+  if (!githubLogin || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = window.sessionStorage.getItem(githubTokenStorageKey);
+    const parsed = stored
+      ? (JSON.parse(stored) as { githubLogin?: string; token?: string })
+      : null;
+
+    return parsed?.githubLogin === githubLogin ? parsed.token ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeGithubToken(githubLogin: string | undefined, token: string) {
+  if (!githubLogin || typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    githubTokenStorageKey,
+    JSON.stringify({ githubLogin, token }),
+  );
 }
 
 export function CreatePrClient() {
@@ -130,6 +159,7 @@ export function CreatePrClient() {
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
+        storeGithubToken(githubLogin, oAuthTokens.accessToken);
         setMessage("GitHub authorized. Your PR will be created by your GitHub user.");
       }
     },
@@ -138,7 +168,12 @@ export function CreatePrClient() {
     () => wallets.find((wallet) => wallet.address)?.address ?? "",
     [wallets],
   );
-  const githubLogin = user?.github?.username;
+  const githubLogin = user?.github?.username ?? undefined;
+  const storedGithubOAuthToken = useMemo(
+    () => readStoredGithubToken(githubLogin),
+    [githubLogin],
+  );
+  const effectiveGithubOAuthToken = githubOAuthToken ?? storedGithubOAuthToken;
   const matchingHeadOption = prOptions?.sourceBranches.some(
     (branch) => branch.head === head,
   );
@@ -151,6 +186,12 @@ export function CreatePrClient() {
     !prOptions?.sourceBranches.length || headSelectValue === customBranchValue;
   const showManualBase =
     !prOptions?.baseBranches.length || baseSelectValue === customBranchValue;
+
+  useEffect(() => {
+    if (githubLogin && githubOAuthToken) {
+      storeGithubToken(githubLogin, githubOAuthToken);
+    }
+  }, [githubLogin, githubOAuthToken]);
 
   function parseLabels(value: string) {
     return value
@@ -248,6 +289,10 @@ export function CreatePrClient() {
   useEffect(() => {
     const repo = repoFullName.trim();
 
+    if (!effectiveGithubOAuthToken) {
+      return;
+    }
+
     if (!repoFullNamePattern.test(repo)) {
       return;
     }
@@ -258,15 +303,19 @@ export function CreatePrClient() {
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoFullName]);
+  }, [repoFullName, effectiveGithubOAuthToken]);
 
   useEffect(() => {
+    if (!effectiveGithubOAuthToken) {
+      return;
+    }
+
     const timeout = window.setTimeout(() => {
       void searchRepos(repoFullName);
     }, 250);
 
     return () => window.clearTimeout(timeout);
-  }, [repoFullName]);
+  }, [repoFullName, effectiveGithubOAuthToken]);
 
   function chooseSourceRepo(nextSourceRepo: string) {
     setSourceRepoFullName(nextSourceRepo);
@@ -293,7 +342,7 @@ export function CreatePrClient() {
       return;
     }
 
-    if (!githubOAuthToken) {
+    if (!effectiveGithubOAuthToken) {
       setMessage("Authorize GitHub before paying so the PR is created by your user.");
       setIsSubmitting(false);
       return;
@@ -333,7 +382,7 @@ export function CreatePrClient() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "github-oauth-token": githubOAuthToken,
+          "github-oauth-token": effectiveGithubOAuthToken,
         },
         body: JSON.stringify({
           repoFullName,
@@ -382,6 +431,48 @@ export function CreatePrClient() {
     }
 
     linkGithub();
+  }
+
+  if (!ready) {
+    return (
+      <Card>
+        <CardContent className="p-6">Loading authentication...</CardContent>
+      </Card>
+    );
+  }
+
+  if (!effectiveGithubOAuthToken) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Connect GitHub to create a PR</CardTitle>
+          <CardDescription>
+            PaidPR opens pull requests as your GitHub user. Authorize GitHub first,
+            then you can pick branches and pay with your wallet.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {githubLogin ? (
+            <Alert>
+              <AlertTitle>GitHub authorization needed</AlertTitle>
+              <AlertDescription>
+                You are signed in as {githubLogin}, but PaidPR needs a fresh GitHub
+                authorization token to create the PR as you.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {message && (
+            <Alert>
+              <AlertTitle>Status</AlertTitle>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+          )}
+          <Button type="button" onClick={authorizeGithub}>
+            {githubLogin ? "Authorize GitHub" : "Connect GitHub"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -594,7 +685,7 @@ export function CreatePrClient() {
               <p className="font-medium">GitHub creator</p>
               <p className="text-sm text-muted-foreground">
                 {githubLogin
-                  ? `Signed in as ${githubLogin}${githubOAuthToken ? "" : " (authorization needed)"}`
+                  ? `Signed in as ${githubLogin}${effectiveGithubOAuthToken ? "" : " (authorization needed)"}`
                   : "No GitHub user connected"}
               </p>
             </div>
@@ -604,7 +695,7 @@ export function CreatePrClient() {
               disabled={!ready}
               onClick={authorizeGithub}
             >
-              {githubOAuthToken
+              {effectiveGithubOAuthToken
                 ? "Re-authorize GitHub"
                 : githubLogin
                   ? "Authorize GitHub"
@@ -644,7 +735,7 @@ export function CreatePrClient() {
               !head ||
               !base ||
               !selectedWalletAddress ||
-              !githubOAuthToken
+              !effectiveGithubOAuthToken
             }
           >
             {isSubmitting ? "Submitting..." : "Pay and open PR"}
