@@ -17,9 +17,9 @@ export function Providers({ children }: { children: ReactNode }) {
         appearance: {
           theme: "dark",
           accentColor: "#fafafa",
-          logo: undefined,
+          logo: "/images/logo-icon.png",
         },
-        loginMethods: ["email", "wallet", "github"],
+        loginMethods: ["github"],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",

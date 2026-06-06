@@ -158,11 +158,13 @@ export function DashboardClient() {
         <CardHeader>
           <CardTitle>Connect your maintainer account</CardTitle>
           <CardDescription>
-            Sign in with Privy and link GitHub to manage installed PaidPR repos.
+            Sign in with GitHub to manage installed PaidPR repos.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={login}>Sign in</Button>
+          <Button onClick={() => login({ loginMethods: ["github"] })}>
+            Sign in with GitHub
+          </Button>
         </CardContent>
       </Card>
     );

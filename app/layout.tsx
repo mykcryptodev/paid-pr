@@ -23,6 +23,10 @@ const segment = localFont({
 export const metadata: Metadata = {
   title: "PaidPR",
   description: "Self-serve x402-gated GitHub pull request creation.",
+  icons: {
+    icon: [{ url: "/images/logo-icon.png", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

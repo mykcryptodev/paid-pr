@@ -37,7 +37,7 @@ GitHub App:
 
 Privy:
 
-- Enable email, wallet, and GitHub login.
+- Enable GitHub login only (disable email and wallet in the Privy dashboard).
 - Env: `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`
 
 x402:

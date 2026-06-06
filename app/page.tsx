@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowRight, Bot, GitPullRequest, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowRight, Bot, GitPullRequest, Wallet } from "lucide-react";
+import { SiteHeader } from "@/components/brand/site-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,20 +16,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2 font-semibold">
-          <ShieldCheck className="h-5 w-5" />
-          PaidPR
-        </div>
-        <nav className="flex items-center gap-3">
-          <Button asChild variant="ghost">
-            <Link href="/create">Open PR</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/dashboard">Dashboard</Link>
-          </Button>
-        </nav>
-      </header>
+      <SiteHeader />
       <main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
         <section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
           <div className="space-y-6">

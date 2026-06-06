@@ -12,7 +12,7 @@ const required = (key: string) => {
 
 export const env = {
   appUrl: optional("NEXT_PUBLIC_APP_URL") ?? "http://localhost:3000",
-  githubAppName: optional("NEXT_PUBLIC_GITHUB_APP_NAME") ?? "paidpr-dev",
+  githubAppName: optional("NEXT_PUBLIC_GITHUB_APP_NAME") ?? "paid-pr",
   githubAppId: () => required("GITHUB_APP_ID"),
   githubPrivateKey: () =>
     required("GITHUB_PRIVATE_KEY").replace(/\\n/g, "\n"),
