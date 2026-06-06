@@ -1,5 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Bot, GitPullRequest, Wallet } from "lucide-react";
+import { ArrowRight, GitPullRequest, Shield } from "lucide-react";
 import { SiteHeader } from "@/components/brand/site-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,56 +18,69 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
-        <section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-          <div className="space-y-6">
-            <div className="inline-flex rounded-full border px-3 py-1 text-sm text-muted-foreground">
-              x402-gated GitHub pull requests for humans and agents
-            </div>
-            <h1 className="max-w-3xl text-5xl font-semibold tracking-tight">
-              Make every external PR pay the maintainer first.
-            </h1>
-            <p className="max-w-2xl text-lg text-muted-foreground">
-              Install one GitHub App, set a per-repo USDC price and recipient
-              wallet, then let contributors or AI agents open PRs through the
-              same x402 endpoint.
-            </p>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button asChild size="lg">
+      <main className="mx-auto flex max-w-5xl flex-col gap-16 px-6 py-16 md:py-24">
+        <section className="mx-auto max-w-3xl space-y-5 text-center">
+          <Image
+            src="/images/logo-cropped.png"
+            alt="PaidPR"
+            width={880}
+            height={880}
+            className="mx-auto aspect-square size-40 md:size-48"
+            priority
+          />
+          <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
+            Put a price on opening a PR.
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Repo owners gate external PRs behind a USDC payment. Contributors and
+            agents pay through x402 before the PR is opened.
+          </p>
+        </section>
+
+        <section className="grid gap-6 md:grid-cols-2">
+          <Card className="flex flex-col border-2">
+            <CardHeader className="space-y-4 pb-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg border bg-muted">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div className="space-y-2">
+                <CardTitle className="text-2xl">I maintain a repo</CardTitle>
+                <CardDescription className="text-base leading-relaxed">
+                  Install the GitHub App, set a per-repo price, and auto-close
+                  unpaid PRs. Fewer drive-by and AI slop PRs land in your inbox.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="mt-auto pt-4">
+              <Button asChild size="lg" className="w-full">
                 <a href={installUrl}>
                   Install on GitHub <ArrowRight className="h-4 w-4" />
                 </a>
               </Button>
-              <Button asChild size="lg" variant="secondary">
-                <Link href="/create">Try contributor flow</Link>
-              </Button>
-            </div>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Demo defaults</CardTitle>
-              <CardDescription>Optimized for a hackathon Base Sepolia flow.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="flex items-center gap-3"><GitPullRequest className="h-4 w-4" /> Public GitHub App install</div>
-              <div className="flex items-center gap-3"><Wallet className="h-4 w-4" /> 0.05 USDC default price</div>
-              <div className="flex items-center gap-3"><Bot className="h-4 w-4" /> Agent-compatible x402 endpoint</div>
             </CardContent>
           </Card>
-        </section>
-        <section className="grid gap-4 md:grid-cols-3">
-          {[
-            ["Install", "Repo owners install the GitHub App and choose repositories."],
-            ["Configure", "Set price, recipient wallet, enabled state, and trusted wallets."],
-            ["Create", "Contributors pay via x402 and the GitHub App opens the PR."],
-          ].map(([title, description]) => (
-            <Card key={title}>
-              <CardHeader>
-                <CardTitle>{title}</CardTitle>
-                <CardDescription>{description}</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
+
+          <Card className="flex flex-col border-2">
+            <CardHeader className="space-y-4 pb-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg border bg-muted">
+                <GitPullRequest className="h-5 w-5" />
+              </div>
+              <div className="space-y-2">
+                <CardTitle className="text-2xl">I want to open a PR</CardTitle>
+                <CardDescription className="text-base leading-relaxed">
+                  Pay the repo&apos;s x402 endpoint, then PaidPR opens the pull
+                  request on your behalf — from the browser or CLI.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="mt-auto pt-4">
+              <Button asChild size="lg" variant="secondary" className="w-full">
+                <Link href="/create">
+                  Open a paid PR <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         </section>
       </main>
     </div>
