@@ -252,6 +252,50 @@ export async function createPullRequest(input: {
   return data;
 }
 
+export async function createPullRequestAsUser(input: {
+  githubOAuthToken: string;
+  installationId: number;
+  repoFullName: string;
+  title: string;
+  body?: string;
+  head: string;
+  base: string;
+  labels?: string[];
+  draft?: boolean;
+  maintainerCanModify?: boolean;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const userOctokit = new Octokit({ auth: input.githubOAuthToken });
+  const { data } = await userOctokit.pulls.create({
+    owner,
+    repo,
+    title: input.title,
+    body: input.body,
+    head: input.head,
+    base: input.base,
+    draft: input.draft,
+    maintainer_can_modify: input.maintainerCanModify,
+  });
+
+  if (input.labels && input.labels.length > 0) {
+    const installationOctokit = await getInstallationOctokit(input.installationId);
+
+    await installationOctokit.issues.addLabels({
+      owner,
+      repo,
+      issue_number: data.number,
+      labels: input.labels,
+    });
+  }
+
+  return data;
+}
+
 export async function closePullRequestWithComment(input: {
   installationId: number;
   repoFullName: string;

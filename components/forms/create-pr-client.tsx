@@ -3,6 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import {
   useConnectWallet,
+  useLinkAccount,
+  useOAuthTokens,
   usePrivy,
   useWallets,
   useX402Fetch,
@@ -95,8 +97,9 @@ function truncateAddress(address: string) {
 
 export function CreatePrClient() {
   const searchParams = useSearchParams();
-  const { authenticated, login, ready } = usePrivy();
+  const { authenticated, login, ready, user } = usePrivy();
   const { connectWallet } = useConnectWallet();
+  const { linkGithub } = useLinkAccount();
   const { wallets } = useWallets();
   const { wrapFetchWithPayment } = useX402Fetch();
   const initialHead = searchParams.get("head") ?? searchParams.get("branch") ?? "";
@@ -117,12 +120,22 @@ export function CreatePrClient() {
   const [optionsMessage, setOptionsMessage] = useState<string | null>(null);
   const [isSearchingRepos, setIsSearchingRepos] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { reauthorize } = useOAuthTokens({
+    onOAuthTokenGrant: ({ oAuthTokens }) => {
+      if (oAuthTokens.provider === "github") {
+        setGithubOAuthToken(oAuthTokens.accessToken);
+        setMessage("GitHub authorized. Your PR will be created by your GitHub user.");
+      }
+    },
+  });
   const selectedWalletAddress = useMemo(
     () => wallets.find((wallet) => wallet.address)?.address ?? "",
     [wallets],
   );
+  const githubLogin = user?.github?.username;
   const matchingHeadOption = prOptions?.sourceBranches.some(
     (branch) => branch.head === head,
   );
@@ -277,6 +290,12 @@ export function CreatePrClient() {
       return;
     }
 
+    if (!githubOAuthToken) {
+      setMessage("Authorize GitHub before paying so the PR is created by your user.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const fetchWithPayment = wrapFetchWithPayment({
         fetch,
@@ -288,7 +307,10 @@ export function CreatePrClient() {
 
       const response = await fetchWithPayment("/api/create-pr", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "github-oauth-token": githubOAuthToken,
+        },
         body: JSON.stringify({
           repoFullName,
           title,
@@ -322,6 +344,20 @@ export function CreatePrClient() {
     }
 
     connectWallet();
+  }
+
+  function authorizeGithub() {
+    if (!authenticated) {
+      login({ loginMethods: ["github"] });
+      return;
+    }
+
+    if (githubLogin) {
+      void reauthorize({ provider: "github" });
+      return;
+    }
+
+    linkGithub();
   }
 
   return (
@@ -510,9 +546,9 @@ export function CreatePrClient() {
 
         <section className="space-y-3">
           <div>
-            <h2 className="font-medium">4. Pay and open the PR</h2>
+            <h2 className="font-medium">4. Connect GitHub and wallet</h2>
             <p className="text-sm text-muted-foreground">
-              The request goes through the same x402-gated PR creation API.
+              GitHub creates the PR as your user; your wallet pays the x402 cost.
             </p>
           </div>
           {prOptions?.payment && (
@@ -529,6 +565,28 @@ export function CreatePrClient() {
               </p>
             </div>
           )}
+          <div className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">GitHub creator</p>
+              <p className="text-sm text-muted-foreground">
+                {githubLogin
+                  ? `Signed in as ${githubLogin}${githubOAuthToken ? "" : " (authorization needed)"}`
+                  : "No GitHub user connected"}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!ready}
+              onClick={authorizeGithub}
+            >
+              {githubOAuthToken
+                ? "Re-authorize GitHub"
+                : githubLogin
+                  ? "Authorize GitHub"
+                  : "Connect GitHub"}
+            </Button>
+          </div>
           <div className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-medium">Payer wallet</p>
@@ -556,7 +614,13 @@ export function CreatePrClient() {
           <Button
             onClick={() => void submit()}
             disabled={
-              isSubmitting || !repoFullName || !title || !head || !base || !selectedWalletAddress
+              isSubmitting ||
+              !repoFullName ||
+              !title ||
+              !head ||
+              !base ||
+              !selectedWalletAddress ||
+              !githubOAuthToken
             }
           >
             {isSubmitting ? "Submitting..." : "Pay and open PR"}

@@ -4,7 +4,10 @@ import {
   createPaymentReceipt,
   getRepoConfigWithTrusted,
 } from "@/lib/db/repositories";
-import { createPullRequest } from "@/lib/github/app";
+import {
+  createPullRequestAsUser,
+  getAuthenticatedGithubUser,
+} from "@/lib/github/app";
 import { getX402Server, toX402Price } from "@/lib/x402/server";
 import { createPrSchema } from "@/lib/validators/paidpr";
 
@@ -32,11 +35,28 @@ function decodePaymentPayload(header: string | null) {
 
 export async function POST(request: NextRequest) {
   const parsed = createPrSchema.safeParse(await request.clone().json());
+  const githubOAuthToken = request.headers.get("github-oauth-token");
 
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid PR request", issues: parsed.error.flatten() },
       { status: 400 },
+    );
+  }
+
+  if (!githubOAuthToken) {
+    return NextResponse.json(
+      { error: "Authorize GitHub before paying so the PR is created by your user." },
+      { status: 401 },
+    );
+  }
+
+  const githubUser = await getAuthenticatedGithubUser(githubOAuthToken).catch(() => null);
+
+  if (!githubUser) {
+    return NextResponse.json(
+      { error: "GitHub authorization is invalid or expired. Re-authorize GitHub and try again." },
+      { status: 401 },
     );
   }
 
@@ -50,7 +70,8 @@ export async function POST(request: NextRequest) {
   }
 
   const handler = async (paidRequest: NextRequest) => {
-    const pullRequest = await createPullRequest({
+    const pullRequest = await createPullRequestAsUser({
+      githubOAuthToken,
       installationId: repoConfig.githubInstallationId,
       repoFullName: parsed.data.repoFullName,
       title: parsed.data.title,
@@ -88,6 +109,7 @@ export async function POST(request: NextRequest) {
         number: pullRequest.number,
         url: pullRequest.html_url,
         title: pullRequest.title,
+        creator: githubUser.login,
       },
       paidpr: {
         repoFullName: parsed.data.repoFullName,

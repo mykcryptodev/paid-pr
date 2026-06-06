@@ -12,6 +12,7 @@ type CliOptions = {
   base: string;
   body: string;
   draft: boolean;
+  githubToken?: string;
   head?: string;
   labels: string[];
   maintainerCanModify: boolean;
@@ -36,6 +37,7 @@ Options:
   --label <label>                   Add a label. Can be repeated.
   --labels <labels>                 Comma or newline separated labels.
   --draft                           Open the pull request as a draft.
+  --github-token <token>             GitHub user OAuth/PAT token. Defaults to GITHUB_TOKEN.
   --no-maintainer-can-modify        Disable maintainer edits on the source branch.
   --private-key <0x...>             EVM private key. Defaults to EVM_PRIVATE_KEY.
   --help                            Show this help message.
@@ -67,6 +69,7 @@ function parseArgs(argv: string[]) {
     base: "main",
     body: "",
     draft: false,
+    githubToken: process.env.GITHUB_TOKEN,
     labels: [],
     maintainerCanModify: true,
     privateKey: process.env.EVM_PRIVATE_KEY as `0x${string}` | undefined,
@@ -116,6 +119,9 @@ function parseArgs(argv: string[]) {
       case "--head":
         options.head = getFlagValue();
         break;
+      case "--github-token":
+        options.githubToken = getFlagValue();
+        break;
       case "--help":
         options.help = true;
         break;
@@ -152,11 +158,18 @@ function assertRequired(
   options: CliOptions,
 ): asserts options is CliOptions & {
   head: string;
+  githubToken: string;
   privateKey: `0x${string}`;
   repoFullName: string;
 } {
   if (!options.privateKey) {
     throw new Error("Set EVM_PRIVATE_KEY or pass --private-key with a funded x402 wallet.");
+  }
+
+  if (!options.githubToken) {
+    throw new Error(
+      "Set GITHUB_TOKEN or pass --github-token so GitHub creates the PR as your user.",
+    );
   }
 
   if (!options.privateKey.startsWith("0x")) {
@@ -207,7 +220,10 @@ async function main() {
 
   const response = await fetchWithPayment(options.apiUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "github-oauth-token": options.githubToken,
+    },
     body: JSON.stringify({
       repoFullName: options.repoFullName,
       title: options.title,

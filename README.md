@@ -40,7 +40,8 @@ Privy:
 - Enable GitHub and wallet login. Maintainers use GitHub for repository
   management, while contributors connect an EVM wallet for x402 payments.
 - Configure GitHub OAuth to request the classic `repo` scope; GitHub requires it
-  when removing a selected repository from an app installation.
+  when creating PRs as contributors and when removing a selected repository
+  from an app installation.
 - Env: `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`
 
 x402:
@@ -65,13 +66,14 @@ Human contributor:
    `&head=fork-owner:branch`, `&base=main`, or `&sourceRepo=owner/fork`.
 2. Enter PR title and body, then select source and base branches from the
    dropdowns or keep the prefilled URL branch.
-3. Connect a funded EVM wallet and pay the displayed x402 cost in-page. PaidPR
-   opens the GitHub PR after the payment verifies.
+3. Connect GitHub and a funded EVM wallet, then pay the displayed x402 cost
+   in-page. PaidPR opens the GitHub PR as your GitHub user after the payment
+   verifies.
 
 Agent/CLI:
 
 ```bash
-EVM_PRIVATE_KEY=0x... pnpm paidpr open \
+GITHUB_TOKEN=ghp_... EVM_PRIVATE_KEY=0x... pnpm paidpr open \
   --repo owner/repo \
   --head contributor:branch \
   --base main \
@@ -79,9 +81,8 @@ EVM_PRIVATE_KEY=0x... pnpm paidpr open \
 ```
 
 The CLI pays the repository's configured x402 price and calls
-`POST /api/create-pr`, so agents can open PRs against any enabled repository
-without direct write credentials for the target repo. It prints the API response
-as JSON, including the GitHub PR URL.
+`POST /api/create-pr` with a GitHub user token, so GitHub attributes the PR to
+that user. It prints the API response as JSON, including the GitHub PR URL.
 
 Useful flags:
 
@@ -92,6 +93,7 @@ pnpm paidpr open \
   --base main \
   --title "Fix flaky parser" \
   --body-file ./PR_BODY.md \
+  --github-token ghp_... \
   --label bug \
   --label agent-authored \
   --draft
