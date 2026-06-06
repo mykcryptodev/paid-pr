@@ -1,5 +1,8 @@
 import { Octokit } from "@octokit/rest";
-import { ensureRepoConfigs, upsertInstallation } from "@/lib/db/repositories";
+import {
+  syncRepoConfigsForInstallation,
+  upsertInstallation,
+} from "@/lib/db/repositories";
 import {
   getInstallationMetadata,
   listInstallationRepositories,
@@ -118,7 +121,7 @@ export async function syncInstallationForGithubIdentity(
     repos,
   );
 
-  await ensureRepoConfigs(row.installationId, repos);
+  await syncRepoConfigsForInstallation(row.installationId, repos);
 
   return {
     synced: true,

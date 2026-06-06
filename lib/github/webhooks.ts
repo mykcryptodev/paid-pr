@@ -1,8 +1,9 @@
 import { Webhooks } from "@octokit/webhooks";
 import { env } from "@/lib/env";
 import {
-  ensureRepoConfigs,
+  deleteInstallationByInstallationId,
   getInstallationByInstallationId,
+  syncRepoConfigsForInstallation,
   upsertInstallation,
 } from "@/lib/db/repositories";
 import { listInstallationRepositories } from "@/lib/github/app";
@@ -55,11 +56,15 @@ export async function syncInstallationFromWebhook(payload: {
 }) {
   const installation = payload.installation;
 
-  if (!installation?.id || !installation.account?.login || !installation.account.id) {
+  if (!installation?.id) {
     return null;
   }
 
   if (payload.action === "deleted") {
+    return deleteInstallationByInstallationId(installation.id);
+  }
+
+  if (!installation.account?.login || !installation.account.id) {
     return null;
   }
 
@@ -102,7 +107,7 @@ export async function syncInstallationFromWebhook(payload: {
     repos,
   );
 
-  await ensureRepoConfigs(row.installationId, repos);
+  await syncRepoConfigsForInstallation(row.installationId, repos);
 
   return row;
 }

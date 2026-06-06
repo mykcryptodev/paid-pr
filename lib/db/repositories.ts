@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, or } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   githubInstallations,
@@ -52,6 +52,15 @@ export async function getInstallationByInstallationId(installationId: number) {
   return row ?? null;
 }
 
+export async function deleteInstallationByInstallationId(installationId: number) {
+  const [row] = await getDb()
+    .delete(githubInstallations)
+    .where(eq(githubInstallations.installationId, installationId))
+    .returning();
+
+  return row ?? null;
+}
+
 export async function ensureRepoConfigs(
   installationId: number,
   repos: string[],
@@ -74,6 +83,32 @@ export async function ensureRepoConfigs(
     )
     .onConflictDoNothing({ target: repoConfigs.repoFullName })
     .returning();
+}
+
+export async function syncRepoConfigsForInstallation(
+  installationId: number,
+  repos: string[],
+) {
+  const db = getDb();
+
+  if (repos.length === 0) {
+    await db
+      .delete(repoConfigs)
+      .where(eq(repoConfigs.githubInstallationId, installationId));
+
+    return [];
+  }
+
+  await db
+    .delete(repoConfigs)
+    .where(
+      and(
+        eq(repoConfigs.githubInstallationId, installationId),
+        notInArray(repoConfigs.repoFullName, repos),
+      ),
+    );
+
+  return ensureRepoConfigs(installationId, repos);
 }
 
 export async function listRepoConfigsForInstallations(
