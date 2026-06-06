@@ -4,6 +4,8 @@ import { removeRepositoryFromInstallation } from "@/lib/github/app";
 import { requireMaintainerForRepo } from "@/lib/privy/authorization";
 import { authErrorResponse } from "@/lib/privy/server";
 
+type HttpError = Error & { status?: number };
+
 export async function DELETE(request: Request) {
   try {
     const url = new URL(request.url);
@@ -44,7 +46,8 @@ export async function DELETE(request: Request) {
     }
 
     if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const status = (error as HttpError).status ?? 400;
+      return NextResponse.json({ error: error.message }, { status });
     }
 
     throw error;

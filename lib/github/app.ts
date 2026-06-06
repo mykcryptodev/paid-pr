@@ -80,8 +80,8 @@ export async function removeRepositoryFromInstallation(input: {
   const octokit = await getInstallationOctokit(input.installationId);
   const { data: repository } = await octokit.repos.get({ owner, repo });
 
-  await octokit.request("DELETE /installation/repositories", {
-    repository_ids: [repository.id],
+  await octokit.request("DELETE /installation/repositories/{repository_id}", {
+    repository_id: repository.id,
   });
 }
 
