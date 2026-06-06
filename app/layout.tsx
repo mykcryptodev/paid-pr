@@ -23,9 +23,20 @@ const segment = localFont({
 export const metadata: Metadata = {
   title: "PaidPR",
   description: "Self-serve x402-gated GitHub pull request creation.",
+  manifest: "/favicon/site.webmanifest",
   icons: {
-    icon: [{ url: "/images/logo-icon.png", type: "image/png" }],
-    apple: [{ url: "/apple-icon.png", type: "image/png" }],
+    icon: [
+      { url: "/favicon/favicon.ico", sizes: "any" },
+      { url: "/favicon/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      {
+        url: "/favicon/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
 };
 
