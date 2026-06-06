@@ -147,9 +147,20 @@ export async function listRepositoryForks(input: {
     );
 }
 
+export async function getAuthenticatedGithubUser(githubOAuthToken: string) {
+  const octokit = new Octokit({ auth: githubOAuthToken });
+  const { data } = await octokit.request("GET /user");
+
+  return {
+    id: data.id,
+    login: data.login,
+  };
+}
+
 export async function removeRepositoryFromInstallation(input: {
   installationId: number;
   repoFullName: string;
+  githubOAuthToken: string;
 }) {
   const [owner, repo] = input.repoFullName.split("/");
 
@@ -159,10 +170,15 @@ export async function removeRepositoryFromInstallation(input: {
 
   const octokit = await getInstallationOctokit(input.installationId);
   const { data: repository } = await octokit.repos.get({ owner, repo });
+  const userOctokit = new Octokit({ auth: input.githubOAuthToken });
 
-  await octokit.request("DELETE /installation/repositories/{repository_id}", {
-    repository_id: repository.id,
-  });
+  await userOctokit.request(
+    "DELETE /user/installations/{installation_id}/repositories/{repository_id}",
+    {
+      installation_id: input.installationId,
+      repository_id: repository.id,
+    },
+  );
 }
 
 export async function createPullRequest(input: {

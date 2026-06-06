@@ -38,6 +38,8 @@ GitHub App:
 Privy:
 
 - Enable GitHub login only (disable email and wallet in the Privy dashboard).
+- Configure GitHub OAuth to request the classic `repo` scope; GitHub requires it
+  when removing a selected repository from an app installation.
 - Env: `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`
 
 x402:
