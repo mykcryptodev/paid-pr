@@ -2,13 +2,16 @@
 
 import { useSearchParams } from "next/navigation";
 import {
+  type SignTypedDataParams,
   useConnectWallet,
   useLinkAccount,
   useOAuthTokens,
   usePrivy,
+  useSignTypedData,
   useWallets,
-  useX402Fetch,
 } from "@privy-io/react-auth";
+import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -101,7 +104,7 @@ export function CreatePrClient() {
   const { connectWallet } = useConnectWallet();
   const { linkGithub } = useLinkAccount();
   const { wallets } = useWallets();
-  const { wrapFetchWithPayment } = useX402Fetch();
+  const { signTypedData } = useSignTypedData();
   const initialHead = searchParams.get("head") ?? searchParams.get("branch") ?? "";
   const hasInitialBase = searchParams.has("base");
   const [repoFullName, setRepoFullName] = useState(searchParams.get("repo") ?? "");
@@ -297,12 +300,33 @@ export function CreatePrClient() {
     }
 
     try {
-      const fetchWithPayment = wrapFetchWithPayment({
-        fetch,
-        walletAddress: selectedWalletAddress,
-        ...(prOptions
-          ? { maxValue: toUsdcBaseUnits(prOptions.payment.priceUsdc) }
-          : {}),
+      const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
+        schemes: [
+          {
+            network: (prOptions?.payment.network ??
+              "eip155:84532") as `${string}:${string}`,
+            client: new ExactEvmScheme({
+              address: selectedWalletAddress as `0x${string}`,
+              signTypedData: async (typedData) => {
+                const privyTypedData = {
+                  domain: typedData.domain,
+                  types: typedData.types,
+                  primaryType: typedData.primaryType,
+                  message: typedData.message,
+                } as SignTypedDataParams;
+                const { signature } = await signTypedData(
+                  privyTypedData,
+                  { address: selectedWalletAddress },
+                );
+
+                return signature as `0x${string}`;
+              },
+            }),
+            ...(prOptions
+              ? { maxValue: toUsdcBaseUnits(prOptions.payment.priceUsdc) }
+              : {}),
+          },
+        ],
       });
 
       const response = await fetchWithPayment("/api/create-pr", {
