@@ -198,6 +198,37 @@ export async function listInstallationsForGithubIdentity(
     .orderBy(githubInstallations.accountLogin);
 }
 
+export async function getInstallationForRepoConfigAndGithubIdentity(
+  repoFullName: string,
+  githubId?: number,
+  githubLogin?: string,
+) {
+  if (!githubId && !githubLogin) {
+    return null;
+  }
+
+  const [row] = await getDb()
+    .select({ installation: githubInstallations })
+    .from(repoConfigs)
+    .innerJoin(
+      githubInstallations,
+      eq(repoConfigs.githubInstallationId, githubInstallations.installationId),
+    )
+    .where(
+      and(
+        eq(repoConfigs.repoFullName, repoFullName),
+        or(
+          githubId ? eq(githubInstallations.senderGithubId, githubId) : undefined,
+          githubLogin ? eq(githubInstallations.senderLogin, githubLogin) : undefined,
+          githubLogin ? eq(githubInstallations.accountLogin, githubLogin) : undefined,
+        ),
+      ),
+    )
+    .limit(1);
+
+  return row?.installation ?? null;
+}
+
 export async function getRepoConfig(repoFullName: string) {
   const [row] = await getDb()
     .select()

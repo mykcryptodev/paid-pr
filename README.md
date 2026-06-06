@@ -67,12 +67,35 @@ Human contributor:
 Agent/CLI:
 
 ```bash
-EVM_PRIVATE_KEY=0x... pnpm paidpr:create \
+EVM_PRIVATE_KEY=0x... pnpm paidpr open \
   --repo owner/repo \
   --head contributor:branch \
   --base main \
   --title "PaidPR demo"
 ```
+
+The CLI pays the repository's configured x402 price and calls
+`POST /api/create-pr`, so agents can open PRs against any enabled repository
+without direct write credentials for the target repo. It prints the API response
+as JSON, including the GitHub PR URL.
+
+Useful flags:
+
+```bash
+pnpm paidpr open \
+  --repo owner/repo \
+  --head fork-owner:feature-branch \
+  --base main \
+  --title "Fix flaky parser" \
+  --body-file ./PR_BODY.md \
+  --label bug \
+  --label agent-authored \
+  --draft
+```
+
+Set `NEXT_PUBLIC_APP_URL` or pass `--api https://paidpr.dev/api/create-pr` when
+calling a hosted PaidPR instance. `pnpm paidpr:create` remains available as a
+backwards-compatible alias.
 
 ## Verification Checklist
 

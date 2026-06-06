@@ -2,6 +2,9 @@
   "name": "paid-pr",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "paidpr": "./scripts/paidpr-create.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -e .env -- drizzle-kit migrate",
     "db:push": "dotenv -e .env -- drizzle-kit push",
-    "paidpr:create": "tsx scripts/paidpr-create.ts"
+    "paidpr": "tsx scripts/paidpr-create.ts",
+    "paidpr:create": "tsx scripts/paidpr-create.ts open"
   },
   "dependencies": {
     "@coinbase/x402": "^2.1.0",

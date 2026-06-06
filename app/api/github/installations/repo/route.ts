@@ -58,6 +58,17 @@ function logDeleteRepoError(error: unknown, repoFullName: string | null) {
   });
 }
 
+function isMissingAppInstallationError(error: unknown) {
+  const githubError = error as GithubHttpError;
+
+  return (
+    (githubError.status ?? githubError.response?.status) === 404 &&
+    githubError.request?.method === "POST" &&
+    githubError.request.url?.includes("/app/installations/") &&
+    githubError.request.url?.endsWith("/access_tokens")
+  );
+}
+
 export async function DELETE(request: Request) {
   let repoFullName: string | null = null;
 
@@ -84,11 +95,21 @@ export async function DELETE(request: Request) {
       throw new AuthError("GitHub authorization does not match your Privy user.", 403);
     }
 
-    await removeRepositoryFromInstallation({
-      installationId: installation.installationId,
-      repoFullName,
-      githubOAuthToken,
-    });
+    if (installation.repositories.includes(repoFullName)) {
+      try {
+        await removeRepositoryFromInstallation({
+          installationId: installation.installationId,
+          repoFullName,
+          githubOAuthToken,
+        });
+      } catch (error) {
+        if (!isMissingAppInstallationError(error)) {
+          throw error;
+        }
+
+        logDeleteRepoError(error, repoFullName);
+      }
+    }
 
     const updatedInstallation = await removeRepoFromInstallation(
       installation.installationId,
