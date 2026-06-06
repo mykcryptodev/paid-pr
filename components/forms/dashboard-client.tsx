@@ -4,6 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
 import { Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,6 +88,9 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const [trustedContributors, setTrustedContributors] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [repoPendingUninstall, setRepoPendingUninstall] = useState<string | null>(
+    null,
+  );
   const [uninstallingRepo, setUninstallingRepo] = useState<string | null>(null);
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
 
@@ -200,14 +212,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   }
 
   async function uninstallRepo(repoFullName: string) {
-    const confirmed = window.confirm(
-      `Uninstall PaidPR from ${repoFullName}? The app will lose access to this repository.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setMessage(null);
     setUninstallingRepo(repoFullName);
 
@@ -220,6 +224,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
 
       if (!response.ok) {
         setMessage(payload.error ?? "Unable to uninstall repository.");
+        setRepoPendingUninstall(null);
         return;
       }
 
@@ -229,6 +234,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       }
 
       setMessage(`Uninstalled PaidPR from ${repoFullName}.`);
+      setRepoPendingUninstall(null);
       await load();
     } finally {
       setUninstallingRepo(null);
@@ -327,7 +333,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 className="shrink-0 text-muted-foreground hover:text-destructive"
                 disabled={uninstallingRepo === config.repoFullName}
                 aria-label={`Uninstall PaidPR from ${config.repoFullName}`}
-                onClick={() => void uninstallRepo(config.repoFullName)}
+                onClick={() => setRepoPendingUninstall(config.repoFullName)}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -450,6 +456,42 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           </Table>
         </CardContent>
       </Card>
+      <AlertDialog
+        open={Boolean(repoPendingUninstall)}
+        onOpenChange={(open) => {
+          if (!open && !uninstallingRepo) {
+            setRepoPendingUninstall(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Uninstall PaidPR?</AlertDialogTitle>
+            <AlertDialogDescription>
+              PaidPR will lose access to{" "}
+              <span className="font-mono">{repoPendingUninstall}</span>. You can
+              reinstall it later from GitHub if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(uninstallingRepo)}>
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!repoPendingUninstall || Boolean(uninstallingRepo)}
+              onClick={() => {
+                if (repoPendingUninstall) {
+                  void uninstallRepo(repoPendingUninstall);
+                }
+              }}
+            >
+              {uninstallingRepo ? "Uninstalling..." : "Uninstall"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
