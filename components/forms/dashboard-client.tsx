@@ -188,11 +188,10 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         .join(" · ")
     : null;
   const shouldShowGitHubAuthorization =
-    !githubOAuthToken &&
-    (Boolean(data?.repoConfigs.length) ||
-      (Boolean(installationId) &&
-        data?.repoConfigs.length === 0 &&
-        data?.syncStatus?.reason === "missing_github_oauth_token"));
+    Boolean(data?.repoConfigs.length) ||
+    (Boolean(installationId) &&
+      data?.repoConfigs.length === 0 &&
+      data?.syncStatus?.reason === "missing_github_oauth_token");
   const signedInLabel =
     data?.user.github?.githubLogin ?? user?.github?.username ?? user?.id ?? "Privy user";
 
@@ -369,7 +368,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 variant="outline"
                 onClick={() => void reauthorize({ provider: "github" })}
               >
-                Authorize GitHub
+                {githubOAuthToken ? "Re-authorize GitHub" : "Authorize GitHub"}
               </Button>
             )}
           </div>

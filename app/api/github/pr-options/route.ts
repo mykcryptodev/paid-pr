@@ -4,6 +4,7 @@ import {
   getRepositoryMetadata,
   listRepositoryBranches,
   listRepositoryForks,
+  listRepositoryLabels,
 } from "@/lib/github/app";
 import { repoFullNameSchema } from "@/lib/validators/paidpr";
 
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const [repository, baseBranches, forks] = await Promise.all([
+  const [repository, baseBranches, forks, labels] = await Promise.all([
     getRepositoryMetadata({
       installationId: repoConfig.githubInstallationId,
       repoFullName: repoConfig.repoFullName,
@@ -45,6 +46,10 @@ export async function GET(request: Request) {
       repoFullName: repoConfig.repoFullName,
     }),
     listRepositoryForks({
+      installationId: repoConfig.githubInstallationId,
+      repoFullName: repoConfig.repoFullName,
+    }),
+    listRepositoryLabels({
       installationId: repoConfig.githubInstallationId,
       repoFullName: repoConfig.repoFullName,
     }),
@@ -91,5 +96,6 @@ export async function GET(request: Request) {
       head: toHeadRef(repoConfig.repoFullName, sourceRepo.fullName, branch),
       isDefault: branch === sourceRepo.defaultBranch,
     })),
+    labels,
   });
 }

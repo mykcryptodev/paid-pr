@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, notInArray, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, notInArray, or } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   githubInstallations,
@@ -155,6 +155,26 @@ export async function listRepoConfigsForInstallations(
     .from(repoConfigs)
     .where(inArray(repoConfigs.githubInstallationId, installationIds))
     .orderBy(repoConfigs.repoFullName);
+}
+
+export async function searchEnabledRepoConfigs(query: string) {
+  const normalizedQuery = query.trim();
+
+  return getDb()
+    .select({
+      repoFullName: repoConfigs.repoFullName,
+    })
+    .from(repoConfigs)
+    .where(
+      and(
+        eq(repoConfigs.enabled, true),
+        normalizedQuery
+          ? ilike(repoConfigs.repoFullName, `%${normalizedQuery}%`)
+          : undefined,
+      ),
+    )
+    .orderBy(repoConfigs.repoFullName)
+    .limit(20);
 }
 
 export async function listInstallationsForGithubIdentity(

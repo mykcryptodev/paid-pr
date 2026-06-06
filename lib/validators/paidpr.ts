@@ -39,6 +39,7 @@ export const createPrSchema = z.object({
   body: z.string().trim().max(65_000).optional().default(""),
   head: z.string().trim().min(1),
   base: z.string().trim().min(1).default("main"),
+  labels: z.array(z.string().trim().min(1).max(100)).optional().default([]),
   draft: z.boolean().optional().default(false),
   maintainerCanModify: z.boolean().optional().default(true),
   payerAddress: walletAddressSchema.optional(),

@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       body: parsed.data.body,
       head: parsed.data.head,
       base: parsed.data.base,
+      labels: parsed.data.labels,
       draft: parsed.data.draft,
       maintainerCanModify: parsed.data.maintainerCanModify,
     });

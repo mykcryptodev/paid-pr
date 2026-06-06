@@ -147,6 +147,40 @@ export async function listRepositoryForks(input: {
     );
 }
 
+export async function listRepositoryLabels(input: {
+  installationId: number;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = await getInstallationOctokit(input.installationId);
+  const labels = (await octokit.paginate(octokit.issues.listLabelsForRepo, {
+    owner,
+    repo,
+    per_page: 100,
+  })) as Array<{ name?: string; color?: string | null; description?: string | null }>;
+
+  return labels
+    .map((label) => ({
+      name: label.name,
+      color: label.color ?? null,
+      description: label.description ?? null,
+    }))
+    .filter(
+      (
+        label,
+      ): label is {
+        name: string;
+        color: string | null;
+        description: string | null;
+      } => Boolean(label.name),
+    );
+}
+
 export async function getAuthenticatedGithubUser(githubOAuthToken: string) {
   const octokit = new Octokit({ auth: githubOAuthToken });
   const { data } = await octokit.request("GET /user");
@@ -188,6 +222,7 @@ export async function createPullRequest(input: {
   body?: string;
   head: string;
   base: string;
+  labels?: string[];
   draft?: boolean;
   maintainerCanModify?: boolean;
 }) {
@@ -204,6 +239,15 @@ export async function createPullRequest(input: {
     draft: input.draft,
     maintainer_can_modify: input.maintainerCanModify,
   });
+
+  if (input.labels && input.labels.length > 0) {
+    await octokit.issues.addLabels({
+      owner,
+      repo,
+      issue_number: data.number,
+      labels: input.labels,
+    });
+  }
 
   return data;
 }

@@ -8,6 +8,17 @@ import { requireMaintainerForRepo } from "@/lib/privy/authorization";
 import { AuthError, authErrorResponse } from "@/lib/privy/server";
 
 type HttpError = Error & { status?: number };
+type GithubHttpError = HttpError & {
+  request?: {
+    method?: string;
+    url?: string;
+  };
+  response?: {
+    status?: number;
+    data?: unknown;
+    headers?: Record<string, string | number | undefined>;
+  };
+};
 
 function normalizedLogin(login?: string) {
   return login?.toLowerCase();
@@ -23,10 +34,36 @@ function identityMatchesGithubUser(
   );
 }
 
+function logDeleteRepoError(error: unknown, repoFullName: string | null) {
+  if (!(error instanceof Error)) {
+    return;
+  }
+
+  const githubError = error as GithubHttpError;
+
+  console.error("Failed to remove repository from GitHub installation", {
+    repoFullName,
+    message: error.message,
+    status: githubError.status ?? githubError.response?.status,
+    request: githubError.request
+      ? {
+          method: githubError.request.method,
+          url: githubError.request.url,
+        }
+      : undefined,
+    responseData: githubError.response?.data,
+    oauthScopes: githubError.response?.headers?.["x-oauth-scopes"],
+    acceptedOauthScopes: githubError.response?.headers?.["x-accepted-oauth-scopes"],
+    githubRequestId: githubError.response?.headers?.["x-github-request-id"],
+  });
+}
+
 export async function DELETE(request: Request) {
+  let repoFullName: string | null = null;
+
   try {
     const url = new URL(request.url);
-    const repoFullName = url.searchParams.get("repo");
+    repoFullName = url.searchParams.get("repo");
     const githubOAuthToken = request.headers.get("github-oauth-token");
 
     if (!repoFullName) {
@@ -73,10 +110,12 @@ export async function DELETE(request: Request) {
     const response = authErrorResponse(error);
 
     if (response) {
+      logDeleteRepoError(error, repoFullName);
       return response;
     }
 
     if (error instanceof Error) {
+      logDeleteRepoError(error, repoFullName);
       const status = (error as HttpError).status ?? 400;
       return NextResponse.json({ error: error.message }, { status });
     }
