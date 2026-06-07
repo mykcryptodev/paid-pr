@@ -1,7 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
 import { DashboardClient } from "@/components/forms/dashboard-client";
 import { Button } from "@/components/ui/button";
+
+export const metadata: Metadata = {
+  title: "Maintainer dashboard",
+  description: "Configure per-repo PaidPR pricing and review paid pull requests.",
+  // Private, auth-gated surface — keep it out of search indexes.
+  robots: { index: false, follow: false },
+};
 
 export default async function DashboardPage({
   searchParams,
