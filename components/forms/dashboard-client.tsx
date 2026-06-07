@@ -122,10 +122,6 @@ function getGitHubInstallationSettingsUrl(
     return "https://github.com/settings/installations";
   }
 
-  if (installation.accountType.toLowerCase() === "organization") {
-    return `https://github.com/organizations/${installation.accountLogin}/settings/installations/${installation.installationId}`;
-  }
-
   return `https://github.com/settings/installations/${installation.installationId}`;
 }
 

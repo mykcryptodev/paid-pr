@@ -4,13 +4,7 @@ import { authErrorResponse } from "@/lib/privy/server";
 
 function getGitHubInstallationSettingsUrl(input: {
   installationId: number;
-  accountLogin: string;
-  accountType: string;
 }) {
-  if (input.accountType.toLowerCase() === "organization") {
-    return `https://github.com/organizations/${input.accountLogin}/settings/installations/${input.installationId}`;
-  }
-
   return `https://github.com/settings/installations/${input.installationId}`;
 }
 
@@ -34,8 +28,6 @@ export async function DELETE(request: Request) {
           "Uninstall this repository from the GitHub app installation settings. GitHub will notify PaidPR by webhook after access is removed.",
         settingsUrl: getGitHubInstallationSettingsUrl({
           installationId: installation.installationId,
-          accountLogin: installation.accountLogin,
-          accountType: installation.accountType,
         }),
       },
       { status: 409 },
