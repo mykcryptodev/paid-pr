@@ -53,9 +53,21 @@ type PrOptionsResponse = {
     defaultBranch: string;
   };
   payment: {
-    priceUsdc: string;
+    priceMode: "usd" | "token";
+    priceAmount: string;
     recipientAddress: string;
     network: string;
+    token: {
+      address: string;
+      symbol: string;
+      decimals: number;
+    };
+    amount: string | null;
+    amountAtomic: string | null;
+    usdPrice: number | null;
+    amountUsd: number | null;
+    priceStale: boolean;
+    priceError: string | null;
   };
   baseBranches: BranchOption[];
   sourceRepositories: SourceRepositoryOption[];
@@ -87,12 +99,21 @@ function getInitialLabels(searchParams: URLSearchParams) {
     .join(", ");
 }
 
-function toUsdcBaseUnits(priceUsdc: string) {
-  const [whole = "0", fractional = ""] = priceUsdc.split(".");
-  return (
-    BigInt(whole) * BigInt(1_000_000) +
-    BigInt(fractional.padEnd(6, "0").slice(0, 6))
-  );
+/**
+ * Cap the amount the wallet will authorize. The server re-prices the PR at
+ * payment time, so we allow a small headroom above the displayed estimate to
+ * tolerate benign USD price drift between loading options and paying.
+ */
+function maxAuthorizedValue(amountAtomic: string | null) {
+  if (!amountAtomic) {
+    return undefined;
+  }
+
+  try {
+    return (BigInt(amountAtomic) * BigInt(105)) / BigInt(100);
+  } catch {
+    return undefined;
+  }
 }
 
 function truncateAddress(address: string) {
@@ -371,9 +392,12 @@ export function CreatePrClient() {
                 return signature as `0x${string}`;
               },
             }),
-            ...(prOptions
-              ? { maxValue: toUsdcBaseUnits(prOptions.payment.priceUsdc) }
-              : {}),
+            ...(() => {
+              const maxValue = maxAuthorizedValue(
+                prOptions?.payment.amountAtomic ?? null,
+              );
+              return maxValue !== undefined ? { maxValue } : {};
+            })(),
           },
         ],
       });
@@ -668,13 +692,32 @@ export function CreatePrClient() {
           </div>
           {prOptions?.payment && (
             <div className="rounded-lg border bg-muted p-3 text-sm">
-              <p>
-                Cost:{" "}
-                <span className="font-medium">
-                  {prOptions.payment.priceUsdc} USDC
-                </span>{" "}
-                on <span className="font-mono">{prOptions.payment.network}</span>
-              </p>
+              {prOptions.payment.amount ? (
+                <p>
+                  Cost:{" "}
+                  <span className="font-medium">
+                    {prOptions.payment.amount} {prOptions.payment.token.symbol}
+                  </span>
+                  {prOptions.payment.amountUsd != null ? (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      (≈ ${prOptions.payment.amountUsd.toFixed(2)})
+                    </span>
+                  ) : null}{" "}
+                  on <span className="font-mono">{prOptions.payment.network}</span>
+                </p>
+              ) : (
+                <p className="text-destructive">
+                  {prOptions.payment.priceError ??
+                    "Token price is temporarily unavailable. Try again shortly."}
+                </p>
+              )}
+              {prOptions.payment.priceStale ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Using a recent cached price; live sources are briefly
+                  unavailable.
+                </p>
+              ) : null}
               <p className="mt-1 break-all text-muted-foreground">
                 Recipient: {prOptions.payment.recipientAddress}
               </p>
@@ -735,7 +778,8 @@ export function CreatePrClient() {
               !head ||
               !base ||
               !selectedWalletAddress ||
-              !effectiveGithubOAuthToken
+              !effectiveGithubOAuthToken ||
+              Boolean(prOptions && !prOptions.payment.amount)
             }
           >
             {isSubmitting ? "Submitting..." : "Pay and open PR"}

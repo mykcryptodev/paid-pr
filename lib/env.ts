@@ -26,4 +26,17 @@ export const env = {
   x402Network: optional("X402_NETWORK") ?? "eip155:8453",
   cdpApiKeyId: optional("CDP_API_KEY_ID"),
   cdpApiKeySecret: optional("CDP_API_KEY_SECRET"),
+
+  // --- Token USD price oracle ---------------------------------------------
+  // All keys are optional; each price provider degrades gracefully when its
+  // credential is missing. DexScreener needs no key, CoinGecko and Thirdweb
+  // work keyless (rate-limited) or with a key, and Chainlink needs an RPC URL.
+  baseRpcUrl: optional("BASE_RPC_URL") ?? "https://mainnet.base.org",
+  baseSepoliaRpcUrl:
+    optional("BASE_SEPOLIA_RPC_URL") ?? "https://sepolia.base.org",
+  coingeckoApiKey: optional("COINGECKO_API_KEY"),
+  coingeckoProApiKey: optional("COINGECKO_PRO_API_KEY"),
+  thirdwebSecretKey: optional("THIRDWEB_SECRET_KEY"),
+  thirdwebClientId: optional("NEXT_PUBLIC_THIRDWEB_CLIENT_ID"),
 };
+

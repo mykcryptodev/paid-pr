@@ -68,12 +68,16 @@ async function handlePullRequestOpened(payload: {
   }
 
   const paymentUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/create?repo=${encodeURIComponent(repoFullName)}`;
+  const priceLabel =
+    config.priceMode === "usd"
+      ? `$${config.priceAmount} (paid in ${config.paymentTokenSymbol})`
+      : `${config.priceAmount} ${config.paymentTokenSymbol}`;
 
   await closePullRequestWithComment({
     installationId,
     repoFullName,
     prNumber,
-    comment: `Thanks for contributing. This repository is protected by PaidPR and requires a ${config.priceUsdc} USDC x402 payment before opening a PR.\n\nPlease reopen through ${paymentUrl}, or include a valid PaidPR receipt.`,
+    comment: `Thanks for contributing. This repository is protected by PaidPR and requires a ${priceLabel} x402 payment before opening a PR.\n\nPlease reopen through ${paymentUrl}, or include a valid PaidPR receipt.`,
   });
 }
 

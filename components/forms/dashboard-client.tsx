@@ -36,9 +36,29 @@ import {
 type RepoConfig = {
   githubInstallationId: number;
   repoFullName: string;
-  priceUsdc: string;
+  priceMode: "usd" | "token";
+  priceAmount: string;
+  paymentTokenAddress: string;
+  paymentTokenSymbol: string;
+  paymentTokenDecimals: number;
+  assetTransferMethod: "eip3009" | "permit2";
+  chainlinkFeed: string | null;
   recipientAddress: string;
   enabled: boolean;
+};
+
+type TokenPreview = {
+  token: {
+    address: string;
+    symbol: string;
+    decimals: number;
+    name: string;
+    eip712Name: string;
+    eip712Version: string;
+    eip712Confirmed: boolean;
+  };
+  price: { usd: number; sources: string[]; stale: boolean } | null;
+  priceError: string | null;
 };
 
 type GithubInstallation = {
@@ -52,7 +72,9 @@ type PaymentReceipt = {
   repoFullName: string;
   prNumber: number | null;
   payerAddress: string | null;
-  amountUsdc: string;
+  tokenSymbol: string | null;
+  amountToken: string | null;
+  amountUsd: string | null;
   txHash: string | null;
   createdAt: string;
 };
@@ -87,6 +109,8 @@ type DashboardClientProps = {
 };
 
 const githubTokenStorageKey = "paidpr.githubOAuthToken";
+const DEFAULT_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const DEFAULT_TOKEN_SYMBOL = "USDC";
 
 function readStoredGithubToken(githubLogin?: string) {
   if (!githubLogin || typeof window === "undefined") {
@@ -131,7 +155,18 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const githubInstallUrl = `https://github.com/apps/${githubAppName}/installations/new`;
   const [data, setData] = useState<InstallationsResponse | null>(null);
   const [selectedRepo, setSelectedRepo] = useState("");
-  const [priceUsdc, setPriceUsdc] = useState("0.05");
+  const [priceMode, setPriceMode] = useState<"usd" | "token">("usd");
+  const [priceAmount, setPriceAmount] = useState("0.05");
+  const [paymentTokenAddress, setPaymentTokenAddress] =
+    useState(DEFAULT_TOKEN_ADDRESS);
+  const [paymentTokenSymbol, setPaymentTokenSymbol] =
+    useState(DEFAULT_TOKEN_SYMBOL);
+  const [assetTransferMethod, setAssetTransferMethod] = useState<
+    "eip3009" | "permit2"
+  >("eip3009");
+  const [chainlinkFeed, setChainlinkFeed] = useState("");
+  const [tokenPreview, setTokenPreview] = useState<TokenPreview | null>(null);
+  const [isResolvingToken, setIsResolvingToken] = useState(false);
   const [recipientAddress, setRecipientAddress] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [trustedContributors, setTrustedContributors] = useState("");
@@ -208,13 +243,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       const first = data.repoConfigs[0];
       if (first && !selectedRepo) {
         setSelectedRepo(first.repoFullName);
-        setPriceUsdc(first.priceUsdc);
-        setRecipientAddress(
-          first.recipientAddress.startsWith("0x0000")
-            ? data.user.defaultWalletAddress ?? first.recipientAddress
-            : first.recipientAddress,
-        );
-        setEnabled(first.enabled);
+        applyConfigToForm(first, data.user.defaultWalletAddress);
       }
     } finally {
       setIsLoading(false);
@@ -267,6 +296,23 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const signedInLabel =
     githubLogin ?? user?.id ?? "Privy user";
 
+  function applyConfigToForm(config: RepoConfig, defaultWalletAddress?: string) {
+    setPriceMode(config.priceMode);
+    setPriceAmount(config.priceAmount);
+    setPaymentTokenAddress(config.paymentTokenAddress);
+    setPaymentTokenSymbol(config.paymentTokenSymbol);
+    setAssetTransferMethod(config.assetTransferMethod);
+    setChainlinkFeed(config.chainlinkFeed ?? "");
+    setTokenPreview(null);
+    setRecipientAddress(
+      config.recipientAddress.startsWith("0x0000")
+        ? defaultWalletAddress ?? config.recipientAddress
+        : config.recipientAddress,
+    );
+    setEnabled(config.enabled);
+    setTrustedContributors("");
+  }
+
   function chooseRepo(repoFullName: string) {
     const config = data?.repoConfigs.find(
       (repoConfig) => repoConfig.repoFullName === repoFullName,
@@ -277,10 +323,39 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     }
 
     setSelectedRepo(config.repoFullName);
-    setPriceUsdc(config.priceUsdc);
-    setRecipientAddress(config.recipientAddress);
-    setEnabled(config.enabled);
-    setTrustedContributors("");
+    applyConfigToForm(config, data?.user.defaultWalletAddress);
+  }
+
+  async function resolveToken() {
+    setIsResolvingToken(true);
+    setMessage(null);
+
+    try {
+      const params = new URLSearchParams({ address: paymentTokenAddress.trim() });
+      if (chainlinkFeed.trim()) {
+        params.set("chainlinkFeed", chainlinkFeed.trim());
+      }
+
+      const response = await authFetch(`/api/tokens/preview?${params.toString()}`);
+      const payload = (await response.json()) as TokenPreview | ErrorResponse;
+
+      if (!response.ok) {
+        setTokenPreview(null);
+        setMessage(
+          "error" in payload ? payload.error ?? "Unable to resolve token." : "Unable to resolve token.",
+        );
+        return;
+      }
+
+      const preview = payload as TokenPreview;
+      setTokenPreview(preview);
+      setPaymentTokenSymbol(preview.token.symbol);
+    } catch {
+      setTokenPreview(null);
+      setMessage("Unable to resolve token.");
+    } finally {
+      setIsResolvingToken(false);
+    }
   }
 
   async function saveConfig() {
@@ -289,7 +364,11 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       method: "POST",
       body: JSON.stringify({
         repoFullName: selectedRepo,
-        priceUsdc,
+        priceMode,
+        priceAmount,
+        paymentTokenAddress: paymentTokenAddress.trim(),
+        assetTransferMethod,
+        chainlinkFeed: chainlinkFeed.trim() || undefined,
         recipientAddress,
         enabled,
         trustedContributors: trustedContributors
@@ -425,7 +504,8 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         <CardHeader>
           <CardTitle>Repo payment config</CardTitle>
           <CardDescription>
-            Set the x402 price, recipient wallet, and trusted wallet free-list.
+            Set the payment token, price, recipient wallet, and trusted wallet
+            free-list.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -433,16 +513,133 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Label>Repository</Label>
             <Input value={selectedRepo} onChange={(event) => setSelectedRepo(event.target.value)} />
           </div>
+
+          <div className="space-y-2">
+            <Label>Payment token (ERC-20 on Base)</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="0x… token contract address"
+                value={paymentTokenAddress}
+                onChange={(event) => {
+                  setPaymentTokenAddress(event.target.value);
+                  setTokenPreview(null);
+                }}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={isResolvingToken || !paymentTokenAddress.trim()}
+                onClick={() => void resolveToken()}
+              >
+                {isResolvingToken ? "Resolving..." : "Resolve"}
+              </Button>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:no-underline"
+              onClick={() => {
+                setPaymentTokenAddress(DEFAULT_TOKEN_ADDRESS);
+                setPaymentTokenSymbol(DEFAULT_TOKEN_SYMBOL);
+                setTokenPreview(null);
+              }}
+            >
+              Use USDC (default)
+            </button>
+            {tokenPreview && (
+              <div className="rounded-md border bg-muted p-3 text-sm">
+                <p>
+                  <span className="font-medium">
+                    {tokenPreview.token.symbol}
+                  </span>{" "}
+                  · {tokenPreview.token.decimals} decimals ·{" "}
+                  {tokenPreview.token.name}
+                </p>
+                {tokenPreview.price ? (
+                  <p className="mt-1 text-muted-foreground">
+                    Live price: ${tokenPreview.price.usd.toPrecision(6)} (
+                    {tokenPreview.price.sources.join(", ") || "no sources"}
+                    {tokenPreview.price.stale ? ", cached" : ""})
+                  </p>
+                ) : (
+                  <p className="mt-1 text-destructive">
+                    {tokenPreview.priceError ?? "No USD price available."}
+                  </p>
+                )}
+                {!tokenPreview.token.eip712Confirmed &&
+                assetTransferMethod === "eip3009" ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    Could not confirm this token&apos;s EIP-712 domain on-chain.
+                    EIP-3009 signing may fail; consider the Permit2 transfer
+                    method.
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Price USDC</Label>
-              <Input value={priceUsdc} onChange={(event) => setPriceUsdc(event.target.value)} />
+              <Label>Price mode</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={priceMode}
+                onChange={(event) =>
+                  setPriceMode(event.target.value as "usd" | "token")
+                }
+              >
+                <option value="usd">Fixed USD (converted at pay time)</option>
+                <option value="token">Fixed token amount</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>
+                {priceMode === "usd"
+                  ? "Price (USD)"
+                  : `Price (${paymentTokenSymbol})`}
+              </Label>
+              <Input
+                value={priceAmount}
+                onChange={(event) => setPriceAmount(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Transfer method</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={assetTransferMethod}
+                onChange={(event) =>
+                  setAssetTransferMethod(
+                    event.target.value as "eip3009" | "permit2",
+                  )
+                }
+              >
+                <option value="eip3009">EIP-3009 (USDC-style)</option>
+                <option value="permit2">Permit2 (any ERC-20)</option>
+              </select>
             </div>
             <div className="flex items-center gap-3 pt-7">
               <Switch checked={enabled} onCheckedChange={setEnabled} />
               <Label>Enabled</Label>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label>Chainlink USD feed (optional)</Label>
+            <Input
+              placeholder="0x… aggregator address (override)"
+              value={chainlinkFeed}
+              onChange={(event) => setChainlinkFeed(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Override the price oracle&apos;s on-chain feed for this token.
+              Leave blank to use known feeds plus CoinGecko, DexScreener, and
+              Thirdweb.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label>Recipient wallet</Label>
             <Input value={recipientAddress} onChange={(event) => setRecipientAddress(event.target.value)} />
@@ -470,7 +667,11 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           </div>
           {selectedConfig && (
             <p className="text-sm text-muted-foreground">
-              Current config: {selectedConfig.priceUsdc} USDC to{" "}
+              Current config:{" "}
+              {selectedConfig.priceMode === "usd"
+                ? `$${selectedConfig.priceAmount} in ${selectedConfig.paymentTokenSymbol}`
+                : `${selectedConfig.priceAmount} ${selectedConfig.paymentTokenSymbol}`}{" "}
+              to{" "}
               <span className="font-mono">{selectedConfig.recipientAddress}</span>
             </p>
           )}
@@ -503,7 +704,12 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                   <TableCell>{receipt.repoFullName}</TableCell>
                   <TableCell>{receipt.prNumber ? `#${receipt.prNumber}` : "Pending"}</TableCell>
                   <TableCell className="font-mono text-xs">{receipt.payerAddress ?? "Unknown"}</TableCell>
-                  <TableCell>{receipt.amountUsdc} USDC</TableCell>
+                  <TableCell>
+                    {receipt.amountToken ?? "—"} {receipt.tokenSymbol ?? ""}
+                    {receipt.amountUsd
+                      ? ` (≈ $${Number(receipt.amountUsd).toFixed(2)})`
+                      : ""}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {receipt.txHash ? (
                       <a

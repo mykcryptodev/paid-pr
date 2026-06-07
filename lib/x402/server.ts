@@ -21,7 +21,3 @@ export function getX402Server() {
 
   return server;
 }
-
-export function toX402Price(priceUsdc: string) {
-  return `$${Number(priceUsdc).toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
-}

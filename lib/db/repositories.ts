@@ -257,7 +257,15 @@ export async function getRepoConfigWithTrusted(repoFullName: string) {
 
 export async function updateRepoConfig(input: {
   repoFullName: string;
-  priceUsdc: string;
+  priceMode: "usd" | "token";
+  priceAmount: string;
+  paymentTokenAddress: string;
+  paymentTokenSymbol: string;
+  paymentTokenDecimals: number;
+  paymentTokenName: string;
+  paymentTokenVersion: string;
+  assetTransferMethod: "eip3009" | "permit2";
+  chainlinkFeed?: string | null;
   recipientAddress: string;
   enabled: boolean;
   trustedContributors: Array<{ walletAddress: string; label?: string }>;
@@ -266,7 +274,15 @@ export async function updateRepoConfig(input: {
   const [config] = await db
     .update(repoConfigs)
     .set({
-      priceUsdc: input.priceUsdc,
+      priceMode: input.priceMode,
+      priceAmount: input.priceAmount,
+      paymentTokenAddress: input.paymentTokenAddress,
+      paymentTokenSymbol: input.paymentTokenSymbol,
+      paymentTokenDecimals: input.paymentTokenDecimals,
+      paymentTokenName: input.paymentTokenName,
+      paymentTokenVersion: input.paymentTokenVersion,
+      assetTransferMethod: input.assetTransferMethod,
+      chainlinkFeed: input.chainlinkFeed ?? null,
       recipientAddress: input.recipientAddress,
       enabled: input.enabled,
       updatedAt: new Date(),
@@ -303,7 +319,14 @@ export async function createPaymentReceipt(input: {
   baseRef?: string | null;
   prNumber?: number | null;
   payerAddress?: string | null;
-  amountUsdc: string;
+  tokenAddress?: string | null;
+  tokenSymbol?: string | null;
+  tokenDecimals?: number | null;
+  amountAtomic: string;
+  amountToken?: string | null;
+  amountUsd?: string | null;
+  priceUsd?: string | null;
+  priceSources?: Record<string, unknown> | null;
   receiptPayload?: Record<string, unknown> | null;
 }) {
   const [receipt] = await getDb()
