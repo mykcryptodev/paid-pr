@@ -143,6 +143,31 @@ function formatTokenAmount(raw: string | null): string {
   return shortenLargeNumber(value);
 }
 
+function formatUsdPrice(raw: string): string {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return raw;
+  }
+
+  return value.toFixed(2);
+}
+
+function ConfigRecipient({ address }: { address: string }) {
+  const shortAddress = (
+    <span className="font-mono">{shortenAddress(address)}</span>
+  );
+
+  if (!thirdwebClient || !isAddress(address)) {
+    return shortAddress;
+  }
+
+  return (
+    <AccountProvider address={address} client={thirdwebClient}>
+      <AccountName fallbackComponent={shortAddress} />
+    </AccountProvider>
+  );
+}
+
 function PayerCell({ address }: { address: string | null }) {
   if (!address) {
     return <span className="text-muted-foreground text-xs">Unknown</span>;
@@ -887,10 +912,17 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <p className="text-sm text-muted-foreground">
               Current config:{" "}
               {selectedConfig.priceMode === "usd"
-                ? `$${selectedConfig.priceAmount} in ${selectedConfig.paymentTokenSymbol}`
-                : `${selectedConfig.priceAmount} ${selectedConfig.paymentTokenSymbol}`}{" "}
+                ? `$${formatUsdPrice(selectedConfig.priceAmount)} USD in ${selectedConfig.paymentTokenSymbol}`
+                : `${formatTokenAmount(selectedConfig.priceAmount)} ${selectedConfig.paymentTokenSymbol}`}{" "}
               to{" "}
-              <span className="font-mono">{selectedConfig.recipientAddress}</span>
+              <ConfigRecipient
+                address={
+                  selectedConfig.recipientAddress.startsWith("0x0000")
+                    ? data?.user.defaultWalletAddress ??
+                      selectedConfig.recipientAddress
+                    : selectedConfig.recipientAddress
+                }
+              />
             </p>
           )}
           {message && (
