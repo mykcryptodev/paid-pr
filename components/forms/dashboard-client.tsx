@@ -115,14 +115,12 @@ function storeGithubToken(githubLogin: string | undefined, token: string) {
   );
 }
 
-function getGitHubInstallationSettingsUrl(
-  installation: GithubInstallation | undefined,
-) {
-  if (!installation) {
+function getGitHubInstallationSettingsUrl(installationId?: number) {
+  if (!installationId) {
     return "https://github.com/settings/installations";
   }
 
-  return `https://github.com/settings/installations/${installation.installationId}`;
+  return `https://github.com/settings/installations/${installationId}`;
 }
 
 export function DashboardClient({ installationId }: DashboardClientProps) {
@@ -239,29 +237,13 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       ),
     [data, repoPendingUninstall],
   );
-  const pendingUninstallInstallation = useMemo(
-    () =>
-      data?.installations.find(
-        (installation) =>
-          installation.installationId ===
-          pendingUninstallConfig?.githubInstallationId,
-      ),
-    [data, pendingUninstallConfig],
-  );
   const pendingUninstallUrl = getGitHubInstallationSettingsUrl(
-    pendingUninstallInstallation,
+    pendingUninstallConfig?.githubInstallationId,
   );
-  const addRepoInstallation = useMemo(() => {
-    const firstConfig = data?.repoConfigs[0];
-
-    return (
-      data?.installations.find(
-        (installation) =>
-          installation.installationId === firstConfig?.githubInstallationId,
-      ) ?? data?.installations[0]
-    );
-  }, [data]);
-  const addRepoUrl = getGitHubInstallationSettingsUrl(addRepoInstallation);
+  const addRepoUrl = getGitHubInstallationSettingsUrl(
+    data?.repoConfigs[0]?.githubInstallationId ??
+      data?.installations[0]?.installationId,
+  );
   const syncDetail = data?.syncStatus
     ? [
         `sync=${data.syncStatus.reason ?? (data.syncStatus.synced ? "synced" : "not_synced")}`,
