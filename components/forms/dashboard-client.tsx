@@ -53,6 +53,7 @@ type PaymentReceipt = {
   prNumber: number | null;
   payerAddress: string | null;
   amountUsdc: string;
+  txHash: string | null;
   createdAt: string;
 };
 
@@ -493,6 +494,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 <TableHead>PR</TableHead>
                 <TableHead>Payer</TableHead>
                 <TableHead>Amount</TableHead>
+                <TableHead>Transaction</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -502,6 +504,20 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                   <TableCell>{receipt.prNumber ? `#${receipt.prNumber}` : "Pending"}</TableCell>
                   <TableCell className="font-mono text-xs">{receipt.payerAddress ?? "Unknown"}</TableCell>
                   <TableCell>{receipt.amountUsdc} USDC</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {receipt.txHash ? (
+                      <a
+                        href={`https://basescan.org/tx/${receipt.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline underline-offset-4 hover:no-underline"
+                      >
+                        {`${receipt.txHash.slice(0, 10)}…${receipt.txHash.slice(-8)}`}
+                      </a>
+                    ) : (
+                      "Pending"
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

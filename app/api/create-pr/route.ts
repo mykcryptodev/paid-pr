@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createPaymentReceipt,
   getRepoConfigWithTrusted,
+  updatePaymentReceiptSettlement,
 } from "@/lib/db/repositories";
 import {
   canAuthenticatedUserAccessRepository,
@@ -127,6 +128,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // The on-chain transaction hash is only known after x402 settlement, which
+  // runs *after* the handler below returns. We capture the receipt id here so
+  // the tx hash can be backfilled from the settlement response.
+  let createdReceiptId: number | null = null;
+
   const handler = async (paidRequest: NextRequest): Promise<NextResponse<unknown>> => {
     let pullRequest: Awaited<ReturnType<typeof createPullRequestAsUser>>;
 
@@ -156,8 +162,11 @@ export async function POST(request: NextRequest) {
     const receiptPayload = decodePaymentPayload(paymentHeader);
 
     try {
-      await createPaymentReceipt({
-        txHash: (receiptPayload?.transaction as string | undefined) ?? null,
+      // txHash is intentionally null here — the payment header is the signed
+      // authorization, not the settled transaction. It is backfilled from the
+      // settlement response after withX402 finishes (see below).
+      const receipt = await createPaymentReceipt({
+        txHash: null,
         paymentId: paymentHeader,
         repoFullName: parsed.data.repoFullName,
         headRef: parsed.data.head,
@@ -171,6 +180,7 @@ export async function POST(request: NextRequest) {
         amountUsdc: repoConfig.priceUsdc,
         receiptPayload,
       });
+      createdReceiptId = receipt?.id ?? null;
     } catch (error) {
       console.error("Pull request created, but failed to record payment receipt", {
         repoFullName: parsed.data.repoFullName,
@@ -195,14 +205,14 @@ export async function POST(request: NextRequest) {
     });
   };
 
-  return withX402<unknown>(
+  const response = await withX402<unknown>(
     handler,
     {
       accepts: {
         scheme: "exact",
         price: toX402Price(repoConfig.priceUsdc),
         network: (process.env.X402_NETWORK ??
-          "eip155:84532") as `${string}:${string}`,
+          "eip155:8453") as `${string}:${string}`,
         payTo: repoConfig.recipientAddress,
         maxTimeoutSeconds: 120,
       },
@@ -219,4 +229,33 @@ export async function POST(request: NextRequest) {
     },
     getX402Server(),
   )(request);
+
+  // After settlement, x402 sets the encoded settle response on the response
+  // headers. Decode it to recover the on-chain transaction hash and backfill
+  // the receipt that was created inside the handler.
+  if (createdReceiptId !== null) {
+    const settleResponse = decodePaymentPayload(
+      response.headers.get("payment-response") ??
+        response.headers.get("x-payment-response"),
+    );
+    const txHash = settleResponse?.transaction;
+    const payer = settleResponse?.payer;
+
+    if (typeof txHash === "string" && txHash.length > 0) {
+      try {
+        await updatePaymentReceiptSettlement({
+          id: createdReceiptId,
+          txHash,
+          payerAddress: typeof payer === "string" ? payer : null,
+        });
+      } catch (error) {
+        console.error("Failed to record settlement tx hash on receipt", {
+          receiptId: createdReceiptId,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+    }
+  }
+
+  return response;
 }

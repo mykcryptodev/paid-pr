@@ -314,6 +314,28 @@ export async function createPaymentReceipt(input: {
   return receipt;
 }
 
+export async function updatePaymentReceiptSettlement(input: {
+  id: number;
+  txHash: string;
+  payerAddress?: string | null;
+}) {
+  const updates: { txHash: string; payerAddress?: string } = {
+    txHash: input.txHash,
+  };
+
+  if (input.payerAddress) {
+    updates.payerAddress = input.payerAddress;
+  }
+
+  const [receipt] = await getDb()
+    .update(paymentReceipts)
+    .set(updates)
+    .where(eq(paymentReceipts.id, input.id))
+    .returning();
+
+  return receipt;
+}
+
 export async function findPaidReceiptForPullRequest(input: {
   repoFullName: string;
   prNumber?: number;

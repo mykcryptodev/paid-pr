@@ -212,7 +212,7 @@ async function main() {
     schemes: [
       {
         network: (process.env.X402_NETWORK ??
-          "eip155:84532") as `${string}:${string}`,
+          "eip155:8453") as `${string}:${string}`,
         client: new ExactEvmScheme(account),
       },
     ],

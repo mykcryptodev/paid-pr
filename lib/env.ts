@@ -23,7 +23,7 @@ export const env = {
   x402FacilitatorUrl:
     optional("X402_FACILITATOR_URL") ??
     "https://api.cdp.coinbase.com/platform/v2/x402",
-  x402Network: optional("X402_NETWORK") ?? "eip155:84532",
+  x402Network: optional("X402_NETWORK") ?? "eip155:8453",
   cdpApiKeyId: optional("CDP_API_KEY_ID"),
   cdpApiKeySecret: optional("CDP_API_KEY_SECRET"),
 };

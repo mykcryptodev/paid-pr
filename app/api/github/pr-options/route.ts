@@ -129,7 +129,7 @@ export async function GET(request: Request) {
     payment: {
       priceUsdc: repoConfig.priceUsdc,
       recipientAddress: repoConfig.recipientAddress,
-      network: process.env.X402_NETWORK ?? "eip155:84532",
+      network: process.env.X402_NETWORK ?? "eip155:8453",
     },
     baseBranches: baseBranches.map((branch) => ({
       name: branch,

@@ -353,7 +353,7 @@ export function CreatePrClient() {
         schemes: [
           {
             network: (prOptions?.payment.network ??
-              "eip155:84532") as `${string}:${string}`,
+              "eip155:8453") as `${string}:${string}`,
             client: new ExactEvmScheme({
               address: selectedWalletAddress as `0x${string}`,
               signTypedData: async (typedData) => {
