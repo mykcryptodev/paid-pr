@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
-import { Trash2 } from "lucide-react";
+import { Check, ChevronDown, Settings2, Trash2 } from "lucide-react";
+import { isAddress } from "viem";
+import { FEED_PRESETS } from "@/lib/pricing/feed-presets";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -159,7 +161,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const githubInstallUrl = `https://github.com/apps/${githubAppName}/installations/new`;
   const [data, setData] = useState<InstallationsResponse | null>(null);
   const [selectedRepo, setSelectedRepo] = useState("");
-  const [priceMode, setPriceMode] = useState<"usd" | "token">("usd");
+  const [priceMode, setPriceMode] = useState<"usd" | "token">("token");
   const [priceAmount, setPriceAmount] = useState("0.05");
   const [paymentTokenAddress, setPaymentTokenAddress] =
     useState(DEFAULT_TOKEN_ADDRESS);
@@ -175,6 +177,17 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const [enabled, setEnabled] = useState(true);
   const [trustedContributors, setTrustedContributors] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [messageType, setMessageType] = useState<"info" | "error" | "success">(
+    "info",
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [recipientName, setRecipientName] = useState<{
+    name: string;
+    source: "basename" | "ens";
+  } | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
   const githubLogin =
@@ -190,6 +203,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
         storeGithubToken(githubLogin, oAuthTokens.accessToken);
+        setMessageType("info");
         setMessage("GitHub authorized. Refreshing repositories...");
       }
     },
@@ -234,6 +248,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       if (!response.ok) {
         const error =
           "error" in payload ? payload.error : "Unable to load GitHub installations.";
+        setMessageType("error");
         setMessage(error ?? "Unable to load GitHub installations.");
         return;
       }
@@ -256,6 +271,47 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, identityToken, installationId, effectiveGithubOAuthToken]);
+
+  // Reverse-resolve the recipient address to a Basename/ENS name (via thirdweb)
+  // and surface it as hint text so maintainers can confirm the payout target.
+  useEffect(() => {
+    const address = recipientAddress.trim();
+    if (!isAddress(address)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRecipientName(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/names/resolve?address=${address}`,
+        );
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          name: string | null;
+          source: "basename" | "ens" | null;
+        };
+        if (!cancelled) {
+          setRecipientName(
+            payload.name && payload.source
+              ? { name: payload.name, source: payload.source }
+              : null,
+          );
+        }
+      } catch {
+        // Leave the hint cleared on failure.
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [recipientAddress]);
 
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
@@ -295,6 +351,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     setAssetTransferMethod(config.assetTransferMethod);
     setChainlinkFeed(config.chainlinkFeed ?? "");
     setTokenPreview(null);
+    setRecipientName(null);
     setRecipientAddress(
       config.recipientAddress.startsWith("0x0000")
         ? defaultWalletAddress ?? config.recipientAddress
@@ -332,6 +389,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
 
       if (!response.ok) {
         setTokenPreview(null);
+        setMessageType("error");
         setMessage(
           "error" in payload ? payload.error ?? "Unable to resolve token." : "Unable to resolve token.",
         );
@@ -343,41 +401,63 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       setPaymentTokenSymbol(preview.token.symbol);
     } catch {
       setTokenPreview(null);
+      setMessageType("error");
       setMessage("Unable to resolve token.");
     } finally {
       setIsResolvingToken(false);
     }
   }
 
+  /** Apply a quick-pick token + Chainlink feed preset (advanced settings). */
+  function applyPreset(preset: (typeof FEED_PRESETS)[number]) {
+    setPaymentTokenAddress(preset.tokenAddress);
+    setPaymentTokenSymbol(preset.symbol);
+    setChainlinkFeed(preset.feed ?? "");
+    setTokenPreview(null);
+  }
+
   async function saveConfig() {
     setMessage(null);
-    const response = await authFetch("/api/config", {
-      method: "POST",
-      body: JSON.stringify({
-        repoFullName: selectedRepo,
-        priceMode,
-        priceAmount,
-        paymentTokenAddress: paymentTokenAddress.trim(),
-        assetTransferMethod,
-        chainlinkFeed: chainlinkFeed.trim() || undefined,
-        recipientAddress,
-        enabled,
-        trustedContributors: trustedContributors
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((walletAddress) => ({ walletAddress })),
-      }),
-    });
+    setSaveStatus("saving");
+    try {
+      const response = await authFetch("/api/config", {
+        method: "POST",
+        body: JSON.stringify({
+          repoFullName: selectedRepo,
+          priceMode,
+          priceAmount,
+          paymentTokenAddress: paymentTokenAddress.trim(),
+          assetTransferMethod,
+          chainlinkFeed: chainlinkFeed.trim() || undefined,
+          recipientAddress,
+          enabled,
+          trustedContributors: trustedContributors
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((walletAddress) => ({ walletAddress })),
+        }),
+      });
 
-    if (!response.ok) {
-      const payload = await response.json();
-      setMessage(payload.error ?? "Unable to save config.");
-      return;
+      if (!response.ok) {
+        const payload = await response.json();
+        setSaveStatus("idle");
+        setMessageType("error");
+        setMessage(payload.error ?? "Unable to save config.");
+        return;
+      }
+
+      setMessageType("success");
+      setMessage("Repository config saved.");
+      setSaveStatus("saved");
+      await load();
+      // Revert the "Saved" button state after a short confirmation window.
+      setTimeout(() => setSaveStatus("idle"), 2500);
+    } catch {
+      setSaveStatus("idle");
+      setMessageType("error");
+      setMessage("Unable to save config.");
     }
-
-    setMessage("Repository config saved.");
-    await load();
   }
 
   if (!ready) {
@@ -494,8 +574,8 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         <CardHeader>
           <CardTitle>Repo payment config</CardTitle>
           <CardDescription>
-            Set the payment token, price, recipient wallet, and trusted wallet
-            free-list.
+            Contributors pay in USDC by default. Use advanced settings to
+            change the token, price mode, transfer method, or price feed.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -505,135 +585,50 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>Payment token (ERC-20 on Base)</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="0x… token contract address"
-                value={paymentTokenAddress}
-                onChange={(event) => {
-                  setPaymentTokenAddress(event.target.value);
-                  setTokenPreview(null);
-                }}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={isResolvingToken || !paymentTokenAddress.trim()}
-                onClick={() => void resolveToken()}
-              >
-                {isResolvingToken ? "Resolving..." : "Resolve"}
-              </Button>
-            </div>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline underline-offset-2 hover:no-underline"
-              onClick={() => {
-                setPaymentTokenAddress(DEFAULT_TOKEN_ADDRESS);
-                setPaymentTokenSymbol(DEFAULT_TOKEN_SYMBOL);
-                setTokenPreview(null);
-              }}
-            >
-              Use USDC (default)
-            </button>
-            {tokenPreview && (
-              <div className="rounded-md border bg-muted p-3 text-sm">
-                <p>
-                  <span className="font-medium">
-                    {tokenPreview.token.symbol}
-                  </span>{" "}
-                  · {tokenPreview.token.decimals} decimals ·{" "}
-                  {tokenPreview.token.name}
-                </p>
-                {tokenPreview.price ? (
-                  <p className="mt-1 text-muted-foreground">
-                    Live price: ${tokenPreview.price.usd.toPrecision(6)} (
-                    {tokenPreview.price.sources.join(", ") || "no sources"}
-                    {tokenPreview.price.stale ? ", cached" : ""})
-                  </p>
-                ) : (
-                  <p className="mt-1 text-destructive">
-                    {tokenPreview.priceError ?? "No USD price available."}
-                  </p>
-                )}
-                {!tokenPreview.token.eip712Confirmed &&
-                assetTransferMethod === "eip3009" ? (
-                  <p className="mt-1 text-xs text-destructive">
-                    Could not confirm this token&apos;s EIP-712 domain on-chain.
-                    EIP-3009 signing may fail; consider the Permit2 transfer
-                    method.
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Price mode</Label>
-              <select
-                className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={priceMode}
-                onChange={(event) =>
-                  setPriceMode(event.target.value as "usd" | "token")
-                }
-              >
-                <option value="usd">Fixed USD (converted at pay time)</option>
-                <option value="token">Fixed token amount</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>
-                {priceMode === "usd"
-                  ? "Price (USD)"
-                  : `Price (${paymentTokenSymbol})`}
-              </Label>
-              <Input
-                value={priceAmount}
-                onChange={(event) => setPriceAmount(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Transfer method</Label>
-              <select
-                className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={assetTransferMethod}
-                onChange={(event) =>
-                  setAssetTransferMethod(
-                    event.target.value as "eip3009" | "permit2",
-                  )
-                }
-              >
-                <option value="eip3009">EIP-3009 (USDC-style)</option>
-                <option value="permit2">Permit2 (any ERC-20)</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-3 pt-7">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-              <Label>Enabled</Label>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Chainlink USD feed (optional)</Label>
+            <Label>
+              {priceMode === "usd"
+                ? "Price per PR (USD)"
+                : `Price per PR (${paymentTokenSymbol})`}
+            </Label>
             <Input
-              placeholder="0x… aggregator address (override)"
-              value={chainlinkFeed}
-              onChange={(event) => setChainlinkFeed(event.target.value)}
+              inputMode="decimal"
+              value={priceAmount}
+              onChange={(event) => setPriceAmount(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Override the price oracle&apos;s on-chain feed for this token.
-              Leave blank to use known feeds plus CoinGecko, DexScreener, and
-              Thirdweb.
+              {priceMode === "usd"
+                ? `$${priceAmount || "0"} converted to ${paymentTokenSymbol} at payment time.`
+                : `A flat ${priceAmount || "0"} ${paymentTokenSymbol} is charged for each PR.`}
             </p>
           </div>
 
           <div className="space-y-2">
             <Label>Recipient wallet</Label>
-            <Input value={recipientAddress} onChange={(event) => setRecipientAddress(event.target.value)} />
+            <Input
+              placeholder="0x… wallet address"
+              value={recipientAddress}
+              onChange={(event) => setRecipientAddress(event.target.value)}
+            />
+            {recipientName ? (
+              <p className="text-xs text-muted-foreground">
+                Resolves to{" "}
+                <span className="font-medium text-foreground">
+                  {recipientName.name}
+                </span>{" "}
+                ({recipientName.source === "basename" ? "Basename" : "ENS"})
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Payouts for merged PRs are sent here.
+              </p>
+            )}
           </div>
+
+          <div className="flex items-center gap-3">
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+            <Label>Enabled</Label>
+          </div>
+
           <div className="space-y-2">
             <Label>Trusted contributor wallets</Label>
             <p className="text-sm text-muted-foreground">
@@ -655,6 +650,175 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
               onChange={(event) => setTrustedContributors(event.target.value)}
             />
           </div>
+
+          <div className="rounded-lg border">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((value) => !value)}
+              className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-muted/50"
+              aria-expanded={showAdvanced}
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="size-4 text-muted-foreground" />
+                Advanced settings
+              </span>
+              <ChevronDown
+                className={`size-4 text-muted-foreground transition-transform ${
+                  showAdvanced ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {showAdvanced && (
+              <div className="space-y-4 border-t px-3 py-4">
+                <div className="space-y-2">
+                  <Label>Payment token (ERC-20 on Base)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="0x… token contract address"
+                      value={paymentTokenAddress}
+                      onChange={(event) => {
+                        setPaymentTokenAddress(event.target.value);
+                        setTokenPreview(null);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={isResolvingToken || !paymentTokenAddress.trim()}
+                      onClick={() => void resolveToken()}
+                    >
+                      {isResolvingToken ? "Resolving..." : "Resolve"}
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {FEED_PRESETS.map((preset) => {
+                      const active =
+                        preset.tokenAddress.toLowerCase() ===
+                        paymentTokenAddress.trim().toLowerCase();
+                      return (
+                        <Button
+                          key={preset.label}
+                          type="button"
+                          size="xs"
+                          variant={active ? "default" : "outline"}
+                          onClick={() => applyPreset(preset)}
+                        >
+                          {preset.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  {tokenPreview && (
+                    <div className="rounded-md border bg-muted p-3 text-sm">
+                      <p>
+                        <span className="font-medium">
+                          {tokenPreview.token.symbol}
+                        </span>{" "}
+                        · {tokenPreview.token.decimals} decimals ·{" "}
+                        {tokenPreview.token.name}
+                      </p>
+                      {tokenPreview.price ? (
+                        <p className="mt-1 text-muted-foreground">
+                          Live price: ${tokenPreview.price.usd.toPrecision(6)} (
+                          {tokenPreview.price.sources.join(", ") || "no sources"}
+                          {tokenPreview.price.stale ? ", cached" : ""})
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-destructive">
+                          {tokenPreview.priceError ?? "No USD price available."}
+                        </p>
+                      )}
+                      {!tokenPreview.token.eip712Confirmed &&
+                      assetTransferMethod === "eip3009" ? (
+                        <p className="mt-1 text-xs text-destructive">
+                          Could not confirm this token&apos;s EIP-712 domain
+                          on-chain. EIP-3009 signing may fail; consider the
+                          Permit2 transfer method.
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Price mode</Label>
+                  <select
+                    className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={priceMode}
+                    onChange={(event) =>
+                      setPriceMode(event.target.value as "usd" | "token")
+                    }
+                  >
+                    <option value="token">Fixed token amount</option>
+                    <option value="usd">Fixed USD (converted at pay time)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Transfer method</Label>
+                  <select
+                    className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={assetTransferMethod}
+                    onChange={(event) =>
+                      setAssetTransferMethod(
+                        event.target.value as "eip3009" | "permit2",
+                      )
+                    }
+                  >
+                    <option value="eip3009">EIP-3009 (USDC-style)</option>
+                    <option value="permit2">Permit2 (any ERC-20)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Chainlink USD feed (optional)</Label>
+                  <Input
+                    placeholder="0x… aggregator address (override)"
+                    value={chainlinkFeed}
+                    onChange={(event) => setChainlinkFeed(event.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {FEED_PRESETS.filter((preset) => preset.feed).map(
+                      (preset) => {
+                        const active =
+                          preset.feed?.toLowerCase() ===
+                          chainlinkFeed.trim().toLowerCase();
+                        return (
+                          <Button
+                            key={preset.label}
+                            type="button"
+                            size="xs"
+                            variant={active ? "default" : "outline"}
+                            onClick={() =>
+                              setChainlinkFeed(preset.feed ?? "")
+                            }
+                          >
+                            {preset.label}/USD
+                          </Button>
+                        );
+                      },
+                    )}
+                    {chainlinkFeed.trim() && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => setChainlinkFeed("")}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Override the price oracle&apos;s on-chain feed for this
+                    token. Leave blank to use known feeds plus CoinGecko,
+                    DexScreener, and Thirdweb.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {selectedConfig && (
             <p className="text-sm text-muted-foreground">
               Current config:{" "}
@@ -665,9 +829,29 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
               <span className="font-mono">{selectedConfig.recipientAddress}</span>
             </p>
           )}
-          {message && <Alert><AlertDescription>{message}</AlertDescription></Alert>}
-          <Button onClick={() => void saveConfig()} disabled={!selectedRepo}>
-            Save config
+          {message && (
+            <Alert
+              variant={
+                messageType === "error"
+                  ? "destructive"
+                  : messageType === "success"
+                    ? "success"
+                    : "default"
+              }
+            >
+              {messageType === "success" && <Check />}
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
+          )}
+          <Button
+            onClick={() => void saveConfig()}
+            disabled={!selectedRepo || saveStatus === "saving"}
+          >
+            {saveStatus === "saving"
+              ? "Saving…"
+              : saveStatus === "saved"
+                ? "Saved ✓"
+                : "Save config"}
           </Button>
         </CardContent>
       </Card>

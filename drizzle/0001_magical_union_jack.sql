@@ -1,0 +1,1 @@
+ALTER TABLE "repo_configs" ALTER COLUMN "price_mode" SET DEFAULT 'token';
