@@ -251,6 +251,17 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const pendingUninstallUrl = getGitHubInstallationSettingsUrl(
     pendingUninstallInstallation,
   );
+  const addRepoInstallation = useMemo(() => {
+    const firstConfig = data?.repoConfigs[0];
+
+    return (
+      data?.installations.find(
+        (installation) =>
+          installation.installationId === firstConfig?.githubInstallationId,
+      ) ?? data?.installations[0]
+    );
+  }, [data]);
+  const addRepoUrl = getGitHubInstallationSettingsUrl(addRepoInstallation);
   const syncDetail = data?.syncStatus
     ? [
         `sync=${data.syncStatus.reason ?? (data.syncStatus.synced ? "synced" : "not_synced")}`,
@@ -408,14 +419,21 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
-            {shouldShowGitHubAuthorization && (
-              <Button
-                variant="outline"
-                onClick={() => void reauthorize({ provider: "github" })}
-              >
-                {effectiveGithubOAuthToken ? "Re-authorize GitHub" : "Authorize GitHub"}
-              </Button>
-            )}
+            {shouldShowGitHubAuthorization &&
+              (effectiveGithubOAuthToken ? (
+                <Button asChild variant="outline">
+                  <a href={addRepoUrl} target="_blank" rel="noreferrer">
+                    Add repo
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => void reauthorize({ provider: "github" })}
+                >
+                  Authorize GitHub
+                </Button>
+              ))}
           </div>
         </CardContent>
       </Card>
