@@ -157,6 +157,7 @@ export async function GET(request: Request) {
         symbol: repoConfig.paymentTokenSymbol,
         decimals: repoConfig.paymentTokenDecimals,
       },
+      assetTransferMethod: repoConfig.assetTransferMethod,
       amount: payment?.amountDisplay ?? null,
       amountAtomic: payment?.amountAtomic ?? null,
       usdPrice: payment?.usdPrice ?? null,

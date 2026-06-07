@@ -12,8 +12,11 @@ import {
 } from "@privy-io/react-auth";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
+import type { EIP1193Provider } from "viem";
 import { useEffect, useMemo, useState } from "react";
+import { approvePermit2, hasPermit2Allowance } from "@/lib/x402/permit2-client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -62,6 +65,7 @@ type PrOptionsResponse = {
       symbol: string;
       decimals: number;
     };
+    assetTransferMethod: "eip3009" | "permit2";
     amount: string | null;
     amountAtomic: string | null;
     usdPrice: number | null;
@@ -176,6 +180,11 @@ export function CreatePrClient() {
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Permit2 approval state for non-EIP-3009 tokens. "n/a" means the token is
+  // EIP-3009 (USDC-style) and needs no approval.
+  const [permit2Status, setPermit2Status] = useState<
+    "n/a" | "checking" | "needed" | "approving" | "approved" | "error"
+  >("n/a");
   const { reauthorize } = useOAuthTokens({
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
@@ -185,10 +194,11 @@ export function CreatePrClient() {
       }
     },
   });
-  const selectedWalletAddress = useMemo(
-    () => wallets.find((wallet) => wallet.address)?.address ?? "",
+  const selectedWallet = useMemo(
+    () => wallets.find((wallet) => wallet.address),
     [wallets],
   );
+  const selectedWalletAddress = selectedWallet?.address ?? "";
   const githubLogin = user?.github?.username ?? undefined;
   const storedGithubOAuthToken = useMemo(
     () => readStoredGithubToken(githubLogin),
@@ -353,6 +363,114 @@ export function CreatePrClient() {
     }
   }
 
+  const usesPermit2 = prOptions?.payment.assetTransferMethod === "permit2";
+
+  // Permit2 tokens require a one-time on-chain approval of the Permit2 contract
+  // before the payer's signed transfer can settle. Detect whether it's already
+  // in place whenever the token, wallet, or amount changes.
+  useEffect(() => {
+    if (!usesPermit2 || !prOptions || !selectedWallet || !selectedWalletAddress) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPermit2Status(usesPermit2 ? "checking" : "n/a");
+      return;
+    }
+
+    const amountAtomic = prOptions.payment.amountAtomic;
+    if (!amountAtomic) {
+      return;
+    }
+
+    let cancelled = false;
+    setPermit2Status("checking");
+
+    void (async () => {
+      try {
+        const provider = (await selectedWallet.getEthereumProvider()) as EIP1193Provider;
+        const approved = await hasPermit2Allowance({
+          provider,
+          network: prOptions.payment.network,
+          tokenAddress: prOptions.payment.token.address as `0x${string}`,
+          owner: selectedWalletAddress as `0x${string}`,
+          requiredAtomic: BigInt(amountAtomic),
+        });
+        if (!cancelled) {
+          setPermit2Status(approved ? "approved" : "needed");
+        }
+      } catch {
+        if (!cancelled) {
+          setPermit2Status("error");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    usesPermit2,
+    selectedWalletAddress,
+    prOptions?.payment.token.address,
+    prOptions?.payment.amountAtomic,
+  ]);
+
+  /**
+   * Ensures the Permit2 allowance exists, prompting the wallet for the one-time
+   * approval when missing. Returns true if payment may proceed.
+   */
+  async function ensurePermit2Approval(): Promise<boolean> {
+    if (!usesPermit2 || !prOptions || !selectedWallet) {
+      return true;
+    }
+    if (permit2Status === "approved") {
+      return true;
+    }
+
+    const amountAtomic = prOptions.payment.amountAtomic;
+
+    try {
+      const provider = (await selectedWallet.getEthereumProvider()) as EIP1193Provider;
+
+      // Re-verify on-chain so we never send a redundant approval (e.g. when the
+      // initial check was still pending or the allowance already covers it).
+      if (amountAtomic) {
+        const alreadyApproved = await hasPermit2Allowance({
+          provider,
+          network: prOptions.payment.network,
+          tokenAddress: prOptions.payment.token.address as `0x${string}`,
+          owner: selectedWalletAddress as `0x${string}`,
+          requiredAtomic: BigInt(amountAtomic),
+        });
+        if (alreadyApproved) {
+          setPermit2Status("approved");
+          return true;
+        }
+      }
+
+      setPermit2Status("approving");
+      setMessage(
+        `Approve ${prOptions.payment.token.symbol} for Permit2 in your wallet (one-time per token).`,
+      );
+      await approvePermit2({
+        provider,
+        network: prOptions.payment.network,
+        tokenAddress: prOptions.payment.token.address as `0x${string}`,
+        owner: selectedWalletAddress as `0x${string}`,
+      });
+      setPermit2Status("approved");
+      setMessage(`${prOptions.payment.token.symbol} approved. Continuing payment...`);
+      return true;
+    } catch (error) {
+      setPermit2Status("needed");
+      setMessage(
+        error instanceof Error
+          ? `Token approval failed: ${error.message}`
+          : "Token approval failed.",
+      );
+      return false;
+    }
+  }
+
   async function submit() {
     setIsSubmitting(true);
     setMessage(null);
@@ -365,6 +483,11 @@ export function CreatePrClient() {
 
     if (!effectiveGithubOAuthToken) {
       setMessage("Authorize GitHub before paying so the PR is created by your user.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!(await ensurePermit2Approval())) {
       setIsSubmitting(false);
       return;
     }
@@ -763,6 +886,41 @@ export function CreatePrClient() {
               {selectedWalletAddress ? "Change wallet" : "Connect wallet"}
             </Button>
           </div>
+          {usesPermit2 && selectedWalletAddress && (
+            <div className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">
+                  Token approval ({prOptions?.payment.token.symbol})
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {permit2Status === "checking" && "Checking Permit2 approval..."}
+                  {permit2Status === "needed" &&
+                    `One-time approval needed so ${prOptions?.payment.token.symbol} can settle via Permit2.`}
+                  {permit2Status === "approving" && "Approving in your wallet..."}
+                  {permit2Status === "approved" &&
+                    `${prOptions?.payment.token.symbol} is approved for Permit2.`}
+                  {permit2Status === "error" &&
+                    "Could not check approval. You can retry; you'll be prompted to approve if needed."}
+                </p>
+              </div>
+              {permit2Status === "approved" ? (
+                <Badge>Approved</Badge>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={
+                    !ready ||
+                    permit2Status === "checking" ||
+                    permit2Status === "approving"
+                  }
+                  onClick={() => void ensurePermit2Approval()}
+                >
+                  {permit2Status === "approving" ? "Approving..." : "Approve"}
+                </Button>
+              )}
+            </div>
+          )}
           {message && (
             <Alert>
               <AlertTitle>Status</AlertTitle>
@@ -782,7 +940,11 @@ export function CreatePrClient() {
               Boolean(prOptions && !prOptions.payment.amount)
             }
           >
-            {isSubmitting ? "Submitting..." : "Pay and open PR"}
+            {isSubmitting
+              ? "Submitting..."
+              : usesPermit2 && permit2Status === "needed"
+                ? "Approve, pay and open PR"
+                : "Pay and open PR"}
           </Button>
         </section>
       </CardContent>

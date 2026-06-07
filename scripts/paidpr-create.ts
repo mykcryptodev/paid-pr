@@ -2,10 +2,129 @@
 
 import { readFile } from "node:fs/promises";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
-import { ExactEvmScheme } from "@x402/evm/exact/client";
-import { privateKeyToAccount } from "viem/accounts";
+import {
+  ExactEvmScheme,
+  createPermit2ApprovalTx,
+  getPermit2AllowanceReadParams,
+} from "@x402/evm/exact/client";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Chain,
+} from "viem";
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { base, baseSepolia } from "viem/chains";
 
 const DEFAULT_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+function chainAndRpc(
+  network: string,
+): { chain: Chain; rpc: string } | null {
+  switch (network) {
+    case "eip155:8453":
+      return {
+        chain: base,
+        rpc: process.env.BASE_RPC_URL ?? "https://mainnet.base.org",
+      };
+    case "eip155:84532":
+      return {
+        chain: baseSepolia,
+        rpc: process.env.BASE_SEPOLIA_RPC_URL ?? "https://sepolia.base.org",
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Permit2-settled tokens need a one-time on-chain approval before the signed
+ * payment can settle. Preflight the API to read the payment requirements, and
+ * if it asks for Permit2, approve the token from the payer key when the
+ * allowance is missing. EIP-3009 tokens (USDC) need none of this.
+ *
+ * Best-effort: any failure here is logged and we fall through to the normal
+ * payment attempt, which surfaces the underlying error.
+ */
+async function ensurePermit2Approval(opts: {
+  apiUrl: string;
+  headers: Record<string, string>;
+  body: string;
+  account: PrivateKeyAccount;
+}) {
+  const preflight = await fetch(opts.apiUrl, {
+    method: "POST",
+    headers: opts.headers,
+    body: opts.body,
+  });
+
+  // Only a 402 carries payment requirements; anything else is handled by the
+  // real request below.
+  if (preflight.status !== 402) {
+    return;
+  }
+
+  const required = (await preflight.json().catch(() => null)) as {
+    accepts?: Array<{
+      network?: string;
+      asset?: string;
+      amount?: string;
+      maxAmountRequired?: string;
+      extra?: { assetTransferMethod?: string };
+    }>;
+  } | null;
+
+  const requirement = required?.accepts?.[0];
+  if (!requirement || requirement.extra?.assetTransferMethod !== "permit2") {
+    return;
+  }
+
+  const asset = requirement.asset as `0x${string}` | undefined;
+  const network = requirement.network;
+  if (!asset || !network) {
+    return;
+  }
+
+  const target = chainAndRpc(network);
+  if (!target) {
+    return;
+  }
+
+  const requiredAtomic = BigInt(
+    requirement.amount ?? requirement.maxAmountRequired ?? "0",
+  );
+  const publicClient = createPublicClient({
+    chain: target.chain,
+    transport: http(target.rpc),
+  });
+  const allowanceParams = getPermit2AllowanceReadParams({
+    tokenAddress: asset,
+    ownerAddress: opts.account.address,
+  });
+  const allowance = (await publicClient.readContract(
+    allowanceParams,
+  )) as bigint;
+
+  if (allowance >= requiredAtomic) {
+    return;
+  }
+
+  console.error(`Approving ${asset} for Permit2 (one-time)...`);
+  const walletClient = createWalletClient({
+    account: opts.account,
+    chain: target.chain,
+    transport: http(target.rpc),
+  });
+  const approval = createPermit2ApprovalTx(asset);
+  const hash = await walletClient.sendTransaction({
+    account: opts.account,
+    chain: target.chain,
+    to: approval.to,
+    data: approval.data,
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
+  console.error(`Permit2 approval confirmed: ${hash}`);
+}
 
 type CliOptions = {
   apiUrl: string;
@@ -218,23 +337,40 @@ async function main() {
     ],
   });
 
+  const requestHeaders = {
+    "content-type": "application/json",
+    "github-oauth-token": options.githubToken as string,
+  };
+  const requestBody = JSON.stringify({
+    repoFullName: options.repoFullName,
+    title: options.title,
+    body: options.body,
+    head: options.head,
+    base: options.base,
+    labels: options.labels,
+    draft: options.draft,
+    maintainerCanModify: options.maintainerCanModify,
+    payerAddress: account.address,
+  });
+
+  try {
+    await ensurePermit2Approval({
+      apiUrl: options.apiUrl,
+      headers: requestHeaders,
+      body: requestBody,
+      account,
+    });
+  } catch (error) {
+    console.error(
+      "Permit2 pre-approval step failed; attempting payment anyway:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+
   const response = await fetchWithPayment(options.apiUrl, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "github-oauth-token": options.githubToken,
-    },
-    body: JSON.stringify({
-      repoFullName: options.repoFullName,
-      title: options.title,
-      body: options.body,
-      head: options.head,
-      base: options.base,
-      labels: options.labels,
-      draft: options.draft,
-      maintainerCanModify: options.maintainerCanModify,
-      payerAddress: account.address,
-    }),
+    headers: requestHeaders,
+    body: requestBody,
   });
 
   const payload = await response.json().catch(async () => ({
