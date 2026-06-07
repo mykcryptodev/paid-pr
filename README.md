@@ -70,10 +70,15 @@ Payment tokens & price oracle:
   median with outlier rejection, cached briefly, and served stale only as a
   last-resort fallback when every live source is down.
 - The exact-EVM x402 scheme moves tokens via EIP-3009 (`transferWithAuthorization`,
-  USDC-style) or Permit2 (`assetTransferMethod`). The configured facilitator
-  must support verify/settle for the chosen token and method. Tokens whose
-  EIP-712 domain cannot be confirmed on-chain are flagged in the dashboard;
-  prefer Permit2 for those.
+  USDC-style) or Permit2 (`assetTransferMethod`). The CDP facilitator supports
+  EIP-3009 for USDC/EURC and **Permit2 for any ERC-20**. Tokens whose EIP-712
+  domain cannot be confirmed on-chain are flagged in the dashboard; use Permit2
+  for those.
+- Permit2 needs a one-time on-chain approval of the Permit2 contract per token,
+  in addition to the per-payment signature. The web pay flow detects a missing
+  approval and walks the payer through it (one extra wallet prompt the first
+  time), and the CLI approves from the payer key automatically. EIP-3009 tokens
+  (USDC) need no approval.
 - Oracle env (all optional; each provider degrades gracefully):
   - `BASE_RPC_URL` / `BASE_SEPOLIA_RPC_URL` — RPC for Chainlink reads and token
     metadata resolution (a dedicated RPC is strongly recommended; the public
