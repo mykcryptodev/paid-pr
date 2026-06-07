@@ -38,6 +38,8 @@ type GithubInstallation = {
   accountType: string;
 };
 
+type PullRequestStatus = "merged" | "open" | "closed" | "draft";
+
 type PaymentReceipt = {
   id: number;
   repoFullName: string;
@@ -45,6 +47,7 @@ type PaymentReceipt = {
   payerAddress: string | null;
   amountUsdc: string;
   txHash: string | null;
+  prStatus: PullRequestStatus | null;
   createdAt: string;
 };
 
@@ -78,6 +81,27 @@ type DashboardClientProps = {
 };
 
 const githubTokenStorageKey = "paidpr.githubOAuthToken";
+
+function formatUsdcAmount(amount: string) {
+  const parsed = Number(amount);
+
+  if (!Number.isFinite(parsed)) {
+    return amount;
+  }
+
+  // Drop trailing zeros while keeping significant decimals (e.g. 0.050000 -> 0.05).
+  return parsed.toString();
+}
+
+const prStatusVariant: Record<
+  PullRequestStatus,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  merged: "default",
+  open: "secondary",
+  draft: "outline",
+  closed: "destructive",
+};
 
 function readStoredGithubToken(githubLogin?: string) {
   if (!githubLogin || typeof window === "undefined") {
@@ -469,6 +493,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
               <TableRow>
                 <TableHead>Repo</TableHead>
                 <TableHead>PR</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Payer</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Transaction</TableHead>
@@ -479,8 +504,17 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 <TableRow key={receipt.id}>
                   <TableCell>{receipt.repoFullName}</TableCell>
                   <TableCell>{receipt.prNumber ? `#${receipt.prNumber}` : "Pending"}</TableCell>
+                  <TableCell>
+                    {receipt.prStatus ? (
+                      <Badge variant={prStatusVariant[receipt.prStatus]} className="capitalize">
+                        {receipt.prStatus}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{receipt.payerAddress ?? "Unknown"}</TableCell>
-                  <TableCell>{receipt.amountUsdc} USDC</TableCell>
+                  <TableCell>{formatUsdcAmount(receipt.amountUsdc)} USDC</TableCell>
                   <TableCell className="font-mono text-xs">
                     {receipt.txHash ? (
                       <a
