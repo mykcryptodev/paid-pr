@@ -10,7 +10,9 @@ import {
   createPullRequestAsUser,
   getAuthenticatedGithubUser,
 } from "@/lib/github/app";
-import { getX402Server, toX402Price } from "@/lib/x402/server";
+import { getX402Server } from "@/lib/x402/server";
+import { computePayment } from "@/lib/tokens/pricing";
+import { PriceUnavailableError } from "@/lib/pricing";
 import { createPrSchema } from "@/lib/validators/paidpr";
 
 export const runtime = "nodejs";
@@ -128,6 +130,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Resolve the exact token and atomic amount to charge. In USD pricing mode
+  // this queries the multi-source price oracle; if every source is down we
+  // cannot price the PR and return 503 rather than guessing.
+  let payment: Awaited<ReturnType<typeof computePayment>>;
+
+  try {
+    payment = await computePayment(repoConfig);
+  } catch (error) {
+    if (error instanceof PriceUnavailableError) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not fetch a reliable USD price for the payment token right now. Please try again shortly.",
+          details: error.errors,
+        },
+        { status: 503 },
+      );
+    }
+
+    console.error("Failed to compute payment for PR", {
+      repoFullName: parsed.data.repoFullName,
+      error: error instanceof Error ? error.message : error,
+    });
+    return NextResponse.json(
+      { error: "Failed to compute the payment amount for this repository." },
+      { status: 500 },
+    );
+  }
+
   // The on-chain transaction hash is only known after x402 settlement, which
   // runs *after* the handler below returns. We capture the receipt id here so
   // the tx hash can be backfilled from the settlement response.
@@ -177,7 +208,14 @@ export async function POST(request: NextRequest) {
           ((receiptPayload?.payer as string | undefined) ||
             (receiptPayload?.from as string | undefined)) ??
           null,
-        amountUsdc: repoConfig.priceUsdc,
+        tokenAddress: payment.tokenAddress,
+        tokenSymbol: payment.tokenSymbol,
+        tokenDecimals: payment.tokenDecimals,
+        amountAtomic: payment.amountAtomic,
+        amountToken: payment.amountDisplay,
+        amountUsd: payment.amountUsd != null ? String(payment.amountUsd) : null,
+        priceUsd: payment.usdPrice != null ? String(payment.usdPrice) : null,
+        priceSources: payment.priceSources as Record<string, unknown> | null,
         receiptPayload,
       });
       createdReceiptId = receipt?.id ?? null;
@@ -199,7 +237,14 @@ export async function POST(request: NextRequest) {
       },
       paidpr: {
         repoFullName: parsed.data.repoFullName,
-        amountUsdc: repoConfig.priceUsdc,
+        token: {
+          address: payment.tokenAddress,
+          symbol: payment.tokenSymbol,
+          decimals: payment.tokenDecimals,
+        },
+        amount: payment.amountDisplay,
+        amountAtomic: payment.amountAtomic,
+        amountUsd: payment.amountUsd,
         recipientAddress: repoConfig.recipientAddress,
       },
     });
@@ -210,9 +255,8 @@ export async function POST(request: NextRequest) {
     {
       accepts: {
         scheme: "exact",
-        price: toX402Price(repoConfig.priceUsdc),
-        network: (process.env.X402_NETWORK ??
-          "eip155:8453") as `${string}:${string}`,
+        price: payment.price,
+        network: payment.network,
         payTo: repoConfig.recipientAddress,
         maxTimeoutSeconds: 120,
       },

@@ -35,6 +35,15 @@ export const githubInstallations = pgTable(
   }),
 );
 
+// Default payment token: native USDC on Base mainnet. Matches the x402
+// default asset so existing USDC-priced repos behave identically.
+export const DEFAULT_TOKEN_ADDRESS =
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+export const DEFAULT_TOKEN_SYMBOL = "USDC";
+export const DEFAULT_TOKEN_DECIMALS = 6;
+export const DEFAULT_TOKEN_EIP712_NAME = "USD Coin";
+export const DEFAULT_TOKEN_EIP712_VERSION = "2";
+
 export const repoConfigs = pgTable(
   "repo_configs",
   {
@@ -45,9 +54,35 @@ export const repoConfigs = pgTable(
         onDelete: "cascade",
       }),
     repoFullName: text("repo_full_name").notNull(),
-    priceUsdc: numeric("price_usdc", { precision: 10, scale: 6 })
+    // Pricing: maintainers either fix a USD price (converted to token units at
+    // payment time via the price oracle) or a fixed token amount.
+    priceMode: text("price_mode").notNull().default("usd"), // "usd" | "token"
+    priceAmount: numeric("price_amount", { precision: 38, scale: 18 })
       .notNull()
       .default("0.05"),
+    // Payment token (ERC-20 on the configured network).
+    paymentTokenAddress: text("payment_token_address")
+      .notNull()
+      .default(DEFAULT_TOKEN_ADDRESS),
+    paymentTokenSymbol: text("payment_token_symbol")
+      .notNull()
+      .default(DEFAULT_TOKEN_SYMBOL),
+    paymentTokenDecimals: integer("payment_token_decimals")
+      .notNull()
+      .default(DEFAULT_TOKEN_DECIMALS),
+    // EIP-712 domain for transferWithAuthorization (EIP-3009) signing.
+    paymentTokenName: text("payment_token_name")
+      .notNull()
+      .default(DEFAULT_TOKEN_EIP712_NAME),
+    paymentTokenVersion: text("payment_token_version")
+      .notNull()
+      .default(DEFAULT_TOKEN_EIP712_VERSION),
+    // How the facilitator moves the token: "eip3009" (default) or "permit2".
+    assetTransferMethod: text("asset_transfer_method")
+      .notNull()
+      .default("eip3009"),
+    // Optional Chainlink USD aggregator override for the price oracle.
+    chainlinkFeed: text("chainlink_feed"),
     recipientAddress: text("recipient_address").notNull(),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -99,7 +134,16 @@ export const paymentReceipts = pgTable(
     baseRef: text("base_ref"),
     prNumber: integer("pr_number"),
     payerAddress: text("payer_address"),
-    amountUsdc: numeric("amount_usdc", { precision: 10, scale: 6 }).notNull(),
+    // Payment token and the settled amount, in both atomic and human units.
+    tokenAddress: text("token_address"),
+    tokenSymbol: text("token_symbol"),
+    tokenDecimals: integer("token_decimals"),
+    amountAtomic: text("amount_atomic").notNull(),
+    amountToken: numeric("amount_token", { precision: 38, scale: 18 }),
+    // USD value at payment time and the oracle price used to derive it.
+    amountUsd: numeric("amount_usd", { precision: 38, scale: 18 }),
+    priceUsd: numeric("price_usd", { precision: 38, scale: 18 }),
+    priceSources: jsonb("price_sources").$type<Record<string, unknown>>(),
     receiptPayload: jsonb("receipt_payload").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

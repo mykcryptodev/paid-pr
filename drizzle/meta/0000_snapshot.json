@@ -1,5 +1,5 @@
 {
-  "id": "fa789050-6daa-471f-a8b2-d44ac5c2b9f0",
+  "id": "353bbbcd-ebcd-4185-be31-f80225ab5e40",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -156,11 +156,53 @@
           "primaryKey": false,
           "notNull": false
         },
-        "amount_usdc": {
-          "name": "amount_usdc",
-          "type": "numeric(10, 6)",
+        "token_address": {
+          "name": "token_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_symbol": {
+          "name": "token_symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_decimals": {
+          "name": "token_decimals",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_atomic": {
+          "name": "amount_atomic",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "amount_token": {
+          "name": "amount_token",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_usd": {
+          "name": "amount_usd",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_usd": {
+          "name": "price_usd",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_sources": {
+          "name": "price_sources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "receipt_payload": {
           "name": "receipt_payload",
@@ -259,12 +301,67 @@
           "primaryKey": false,
           "notNull": true
         },
-        "price_usdc": {
-          "name": "price_usdc",
-          "type": "numeric(10, 6)",
+        "price_mode": {
+          "name": "price_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'usd'"
+        },
+        "price_amount": {
+          "name": "price_amount",
+          "type": "numeric(38, 18)",
           "primaryKey": false,
           "notNull": true,
           "default": "'0.05'"
+        },
+        "payment_token_address": {
+          "name": "payment_token_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'"
+        },
+        "payment_token_symbol": {
+          "name": "payment_token_symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USDC'"
+        },
+        "payment_token_decimals": {
+          "name": "payment_token_decimals",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 6
+        },
+        "payment_token_name": {
+          "name": "payment_token_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'USD Coin'"
+        },
+        "payment_token_version": {
+          "name": "payment_token_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'2'"
+        },
+        "asset_transfer_method": {
+          "name": "asset_transfer_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'eip3009'"
+        },
+        "chainlink_feed": {
+          "name": "chainlink_feed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "recipient_address": {
           "name": "recipient_address",

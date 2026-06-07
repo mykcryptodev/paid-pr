@@ -1,8 +1,12 @@
 # PaidPR
 
 Self-serve x402-gated GitHub pull request creation. Repo owners install one
-GitHub App, configure a per-repo USDC price and recipient wallet, and
-contributors or agents open PRs through the same paid endpoint. Deter PR slop with x402.
+GitHub App, configure a per-repo price and recipient wallet, and contributors or
+agents open PRs through the same paid endpoint. Deter PR slop with x402.
+
+Maintainers can charge in **any reliably-priced ERC-20 token on Base** — not
+just USDC. Set the price in USD (converted to the token at payment time using a
+multi-source price oracle) or as a fixed token amount.
 
 ## Demo
 
@@ -55,6 +59,33 @@ x402:
 - For Coinbase CDP facilitator, set `X402_FACILITATOR_URL`,
   `CDP_API_KEY_ID`, and `CDP_API_KEY_SECRET`
 
+Payment tokens & price oracle:
+
+- Any ERC-20 on the configured network can be set as a repo's payment token.
+  The dashboard resolves the token's symbol, decimals, and EIP-712 domain
+  on-chain, and previews its live USD price before you save.
+- USD prices are reconciled across multiple independent sources so a single
+  bad or stale feed cannot move the charged amount: **Chainlink** (on-chain),
+  **CoinGecko**, **DexScreener**, and **Thirdweb**. Quotes are aggregated by
+  median with outlier rejection, cached briefly, and served stale only as a
+  last-resort fallback when every live source is down.
+- The exact-EVM x402 scheme moves tokens via EIP-3009 (`transferWithAuthorization`,
+  USDC-style) or Permit2 (`assetTransferMethod`). The CDP facilitator supports
+  EIP-3009 for USDC/EURC and **Permit2 for any ERC-20**. Tokens whose EIP-712
+  domain cannot be confirmed on-chain are flagged in the dashboard; use Permit2
+  for those.
+- Permit2 needs a one-time on-chain approval of the Permit2 contract per token,
+  in addition to the per-payment signature. The web pay flow detects a missing
+  approval and walks the payer through it (one extra wallet prompt the first
+  time), and the CLI approves from the payer key automatically. EIP-3009 tokens
+  (USDC) need no approval.
+- Oracle env (all optional; each provider degrades gracefully):
+  - `BASE_RPC_URL` / `BASE_SEPOLIA_RPC_URL` — RPC for Chainlink reads and token
+    metadata resolution (a dedicated RPC is strongly recommended; the public
+    default is heavily rate-limited).
+  - `COINGECKO_API_KEY` (demo) or `COINGECKO_PRO_API_KEY` (pro).
+  - `THIRDWEB_SECRET_KEY` or `NEXT_PUBLIC_THIRDWEB_CLIENT_ID`.
+
 ## Flows
 
 Maintainer:
@@ -62,7 +93,8 @@ Maintainer:
 1. Visit `/` and click install.
 2. Choose repositories in GitHub.
 3. Return to `/dashboard`.
-4. Connect Privy, set price, recipient wallet, enabled state, and trusted wallets.
+4. Connect Privy, choose the payment token (or keep USDC), set the price in
+   USD or token units, recipient wallet, enabled state, and trusted wallets.
 
 Human contributor:
 

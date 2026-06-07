@@ -6,6 +6,8 @@ import {
   listRepositoryForks,
   listRepositoryLabels,
 } from "@/lib/github/app";
+import { computePayment } from "@/lib/tokens/pricing";
+import { PriceUnavailableError } from "@/lib/pricing";
 import { repoFullNameSchema } from "@/lib/validators/paidpr";
 
 export const runtime = "nodejs";
@@ -124,12 +126,44 @@ export async function GET(request: Request) {
     sourceBranches = [];
   }
 
+  // Price the PR for display so the client can show the cost and cap the
+  // signed payment. A momentary oracle outage should not block branch
+  // selection, so price failures degrade to nulls instead of erroring.
+  let payment: Awaited<ReturnType<typeof computePayment>> | null = null;
+  let priceError: string | null = null;
+
+  try {
+    payment = await computePayment(repoConfig);
+  } catch (error) {
+    priceError =
+      error instanceof PriceUnavailableError
+        ? "No reliable USD price is available for the payment token right now."
+        : "Failed to compute the payment amount.";
+    console.error("Unable to price PR options", {
+      repoFullName: repoConfig.repoFullName,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
   return NextResponse.json({
     repository,
     payment: {
-      priceUsdc: repoConfig.priceUsdc,
+      priceMode: repoConfig.priceMode,
+      priceAmount: repoConfig.priceAmount,
       recipientAddress: repoConfig.recipientAddress,
-      network: process.env.X402_NETWORK ?? "eip155:8453",
+      network: payment?.network ?? process.env.X402_NETWORK ?? "eip155:8453",
+      token: {
+        address: repoConfig.paymentTokenAddress,
+        symbol: repoConfig.paymentTokenSymbol,
+        decimals: repoConfig.paymentTokenDecimals,
+      },
+      assetTransferMethod: repoConfig.assetTransferMethod,
+      amount: payment?.amountDisplay ?? null,
+      amountAtomic: payment?.amountAtomic ?? null,
+      usdPrice: payment?.usdPrice ?? null,
+      amountUsd: payment?.amountUsd ?? null,
+      priceStale: payment?.priceSources?.stale ?? false,
+      priceError,
     },
     baseBranches: baseBranches.map((branch) => ({
       name: branch,

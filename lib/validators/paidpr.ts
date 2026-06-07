@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 
 export const repoFullNameSchema = z
   .string()
@@ -11,14 +11,34 @@ export const walletAddressSchema = z
   .trim()
   .refine((value) => isAddress(value), "Use a valid EVM wallet address.");
 
-export const priceUsdcSchema = z
+/** A positive decimal amount (USD or token units) with up to 18 places. */
+export const priceAmountSchema = z
   .string()
   .trim()
-  .regex(/^\d+(\.\d{1,6})?$/, "Use a decimal USDC amount.")
+  .regex(/^\d+(\.\d{1,18})?$/, "Use a positive decimal amount.")
   .refine((value) => {
     const amount = Number(value);
-    return amount >= 0.01 && amount <= 1;
-  }, "MVP prices must be between 0.01 and 1.00 USDC.");
+    return amount > 0 && amount <= 1_000_000_000;
+  }, "Amount must be greater than 0.");
+
+export const priceModeSchema = z.enum(["usd", "token"]);
+export const assetTransferMethodSchema = z.enum(["eip3009", "permit2"]);
+
+const tokenAddressSchema = z
+  .string()
+  .trim()
+  .refine((value) => isAddress(value), "Use a valid token contract address.")
+  .transform((value) => getAddress(value));
+
+const optionalTokenAddressSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine(
+    (value) => !value || isAddress(value),
+    "Use a valid token contract address.",
+  )
+  .transform((value) => (value ? getAddress(value) : undefined));
 
 export const trustedContributorSchema = z.object({
   walletAddress: walletAddressSchema.transform((value) => value.toLowerCase()),
@@ -27,9 +47,16 @@ export const trustedContributorSchema = z.object({
 
 export const updateConfigSchema = z.object({
   repoFullName: repoFullNameSchema,
-  priceUsdc: priceUsdcSchema,
   recipientAddress: walletAddressSchema,
   enabled: z.boolean().default(true),
+  priceMode: priceModeSchema.default("usd"),
+  priceAmount: priceAmountSchema,
+  // The payment token. The server re-resolves symbol/decimals/EIP-712 domain
+  // on-chain, so callers only need to supply the address (and optionally the
+  // transfer method and a Chainlink feed override).
+  paymentTokenAddress: tokenAddressSchema,
+  assetTransferMethod: assetTransferMethodSchema.default("eip3009"),
+  chainlinkFeed: optionalTokenAddressSchema,
   trustedContributors: z.array(trustedContributorSchema).default([]),
 });
 
