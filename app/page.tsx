@@ -22,18 +22,19 @@ export default function Home() {
         <section className="mx-auto max-w-3xl space-y-5 text-center">
           <Image
             src="/images/logo-cropped.png"
-            alt="PaidPR"
+            alt="PaidPR logo"
             width={880}
             height={880}
             className="mx-auto aspect-square size-40 md:size-48"
             priority
           />
           <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
-            Put a price on opening a PR.
+            Stop the Slop. Open a real PR.
           </h1>
           <p className="text-lg text-muted-foreground">
-            Repo owners gate external PRs behind a USDC payment. Contributors and
-            agents pay through x402 before the PR is opened.
+            Put a price on opening a PR. Repo maintainers gate external pull
+            requests behind a USDC payment — contributors and AI agents pay
+            through x402 before the PR is opened.
           </p>
         </section>
 

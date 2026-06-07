@@ -25,6 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { RepoCombobox } from "@/components/forms/repo-combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -642,12 +643,14 @@ export function CreatePrClient() {
           <div className="space-y-2">
             <Label>Repository</Label>
             <div className="flex gap-2">
-              <Input
-                list="paidpr-repositories"
-                placeholder="owner/repo"
-                value={repoFullName}
-                onChange={(event) => changeRepoFullName(event.target.value)}
-              />
+              <div className="flex-1">
+                <RepoCombobox
+                  value={repoFullName}
+                  onChange={changeRepoFullName}
+                  options={repoResults.map((repo) => repo.fullName)}
+                  isLoading={isSearchingRepos}
+                />
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -657,11 +660,6 @@ export function CreatePrClient() {
                 {isLoadingOptions ? "Loading..." : "Load"}
               </Button>
             </div>
-            <datalist id="paidpr-repositories">
-              {repoResults.map((repo) => (
-                <option key={repo.fullName} value={repo.fullName} />
-              ))}
-            </datalist>
             <p className="text-sm text-muted-foreground">
               {isSearchingRepos ? "Searching repositories..." : "Select a result or type owner/repo."}
             </p>

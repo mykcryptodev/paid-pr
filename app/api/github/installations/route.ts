@@ -11,6 +11,7 @@ import {
   requirePrivyUser,
 } from "@/lib/privy/server";
 import { syncInstallationForGithubIdentity } from "@/lib/github/installations";
+import { getPullRequestStatus, type PullRequestStatus } from "@/lib/github/app";
 
 export async function GET(request: Request) {
   try {
@@ -42,6 +43,37 @@ export async function GET(request: Request) {
       configs.map((config) => config.repoFullName),
     );
 
+    const repoToInstallation = new Map(
+      configs.map((config) => [
+        config.repoFullName,
+        config.githubInstallationId,
+      ]),
+    );
+    const statusCache = new Map<string, Promise<PullRequestStatus | null>>();
+    const receiptsWithStatus = await Promise.all(
+      receipts.map(async (receipt) => {
+        const installationId = repoToInstallation.get(receipt.repoFullName);
+
+        if (!receipt.prNumber || !installationId) {
+          return { ...receipt, prStatus: null };
+        }
+
+        const cacheKey = `${receipt.repoFullName}#${receipt.prNumber}`;
+        let statusPromise = statusCache.get(cacheKey);
+
+        if (!statusPromise) {
+          statusPromise = getPullRequestStatus({
+            installationId,
+            repoFullName: receipt.repoFullName,
+            prNumber: receipt.prNumber,
+          });
+          statusCache.set(cacheKey, statusPromise);
+        }
+
+        return { ...receipt, prStatus: await statusPromise };
+      }),
+    );
+
     return NextResponse.json({
       user: {
         id: user.id,
@@ -50,7 +82,7 @@ export async function GET(request: Request) {
       },
       installations,
       repoConfigs: configs,
-      paymentReceipts: receipts,
+      paymentReceipts: receiptsWithStatus,
       syncStatus,
     });
   } catch (error) {

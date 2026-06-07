@@ -1,6 +1,7 @@
 {
-  "name": "PaidPR",
+  "name": "PaidPR — Stop the Slop. Open a real PR.",
   "short_name": "PaidPR",
+  "description": "Gate external GitHub pull requests behind a USDC payment with x402.",
   "icons": [
     {
       "src": "/favicon/android-chrome-192x192.png",
@@ -13,7 +14,8 @@
       "type": "image/png"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
-  "display": "standalone"
+  "theme_color": "#0a0a0a",
+  "background_color": "#0a0a0a",
+  "display": "standalone",
+  "start_url": "/"
 }

@@ -1,8 +1,22 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Logo } from "@/components/brand/logo";
 import { CreatePrClient } from "@/components/forms/create-pr-client";
 import { Button } from "@/components/ui/button";
+
+export const metadata: Metadata = {
+  title: "Open a paid PR",
+  description:
+    "Pay a repository's x402 endpoint in USDC, then PaidPR opens the pull request on your behalf — from the browser or the CLI.",
+  alternates: { canonical: "/create" },
+  openGraph: {
+    title: "Open a paid PR · PaidPR",
+    description:
+      "Pay a repository's x402 endpoint in USDC, then PaidPR opens the pull request on your behalf — from the browser or the CLI.",
+    url: "/create",
+  },
+};
 
 export default function CreatePage() {
   return (

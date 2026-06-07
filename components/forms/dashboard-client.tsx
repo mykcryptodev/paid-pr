@@ -4,15 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
 import { Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +58,8 @@ type GithubInstallation = {
   accountType: string;
 };
 
+type PullRequestStatus = "merged" | "open" | "closed" | "draft";
+
 type PaymentReceipt = {
   id: number;
   repoFullName: string;
@@ -76,6 +69,7 @@ type PaymentReceipt = {
   amountToken: string | null;
   amountUsd: string | null;
   txHash: string | null;
+  prStatus: PullRequestStatus | null;
   createdAt: string;
 };
 
@@ -111,6 +105,16 @@ type DashboardClientProps = {
 const githubTokenStorageKey = "paidpr.githubOAuthToken";
 const DEFAULT_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const DEFAULT_TOKEN_SYMBOL = "USDC";
+
+const prStatusVariant: Record<
+  PullRequestStatus,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  merged: "default",
+  open: "secondary",
+  draft: "outline",
+  closed: "destructive",
+};
 
 function readStoredGithubToken(githubLogin?: string) {
   if (!githubLogin || typeof window === "undefined") {
@@ -172,9 +176,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const [trustedContributors, setTrustedContributors] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [repoPendingUninstall, setRepoPendingUninstall] = useState<string | null>(
-    null,
-  );
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
   const githubLogin =
     data?.user.github?.githubLogin ?? user?.github?.username ?? undefined;
@@ -184,7 +185,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   );
   const effectiveGithubOAuthToken = githubOAuthToken ?? storedGithubOAuthToken;
 
-  const { reauthorize } = useOAuthTokens({
+  useOAuthTokens({
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
@@ -259,16 +260,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
     [data, selectedRepo],
-  );
-  const pendingUninstallConfig = useMemo(
-    () =>
-      data?.repoConfigs.find(
-        (config) => config.repoFullName === repoPendingUninstall,
-      ),
-    [data, repoPendingUninstall],
-  );
-  const pendingUninstallUrl = getGitHubInstallationSettingsUrl(
-    pendingUninstallConfig?.githubInstallationId,
   );
   const addRepoUrl = getGitHubInstallationSettingsUrl(
     data?.repoConfigs[0]?.githubInstallationId ??
@@ -448,14 +439,21 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 </Badge>
               </button>
               <Button
-                type="button"
+                asChild
                 variant="ghost"
                 size="icon"
                 className="shrink-0 text-muted-foreground hover:text-destructive"
-                aria-label={`Uninstall PaidPR from ${config.repoFullName}`}
-                onClick={() => setRepoPendingUninstall(config.repoFullName)}
               >
-                <Trash2 className="size-4" />
+                <a
+                  href={getGitHubInstallationSettingsUrl(
+                    config.githubInstallationId,
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Uninstall PaidPR from ${config.repoFullName}`}
+                >
+                  <Trash2 className="size-4" />
+                </a>
               </Button>
             </div>
           ))}
@@ -481,21 +479,13 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
-            {shouldShowGitHubAuthorization &&
-              (effectiveGithubOAuthToken ? (
-                <Button asChild variant="outline">
-                  <a href={addRepoUrl} target="_blank" rel="noreferrer">
-                    Add repo
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => void reauthorize({ provider: "github" })}
-                >
-                  Authorize GitHub
-                </Button>
-              ))}
+            {shouldShowGitHubAuthorization && (
+              <Button asChild variant="outline">
+                <a href={addRepoUrl} target="_blank" rel="noreferrer">
+                  Add repo
+                </a>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -693,6 +683,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
               <TableRow>
                 <TableHead>Repo</TableHead>
                 <TableHead>PR</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Payer</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Transaction</TableHead>
@@ -703,6 +694,15 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 <TableRow key={receipt.id}>
                   <TableCell>{receipt.repoFullName}</TableCell>
                   <TableCell>{receipt.prNumber ? `#${receipt.prNumber}` : "Pending"}</TableCell>
+                  <TableCell>
+                    {receipt.prStatus ? (
+                      <Badge variant={prStatusVariant[receipt.prStatus]} className="capitalize">
+                        {receipt.prStatus}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{receipt.payerAddress ?? "Unknown"}</TableCell>
                   <TableCell>
                     {receipt.amountToken ?? "—"} {receipt.tokenSymbol ?? ""}
@@ -730,44 +730,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           </Table>
         </CardContent>
       </Card>
-      <AlertDialog
-        open={Boolean(repoPendingUninstall)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRepoPendingUninstall(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Uninstall PaidPR?</AlertDialogTitle>
-            <AlertDialogDescription>
-              GitHub will open the PaidPR app installation settings for{" "}
-              <span className="font-mono">{repoPendingUninstall}</span>. Remove
-              this repository from the app there, then return here and refresh.
-              GitHub will send PaidPR a webhook to clean up this dashboard.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button asChild variant="destructive" disabled={!repoPendingUninstall}>
-              <a
-                href={pendingUninstallUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => {
-                  setMessage(
-                    "Finish uninstalling in GitHub, then refresh this dashboard after GitHub sends the webhook.",
-                  );
-                  setRepoPendingUninstall(null);
-                }}
-              >
-                Open GitHub settings
-              </a>
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
