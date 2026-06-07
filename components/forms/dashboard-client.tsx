@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useIdentityToken, useOAuthTokens, usePrivy } from "@privy-io/react-auth";
 import { Trash2 } from "lucide-react";
+import { AccountAvatar, AccountName, AccountProvider, Blobbie } from "thirdweb/react";
+import { formatNumber, shortenAddress, shortenLargeNumber } from "thirdweb/utils";
+import { thirdwebClient } from "@/lib/thirdweb/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,6 +118,67 @@ const prStatusVariant: Record<
   draft: "outline",
   closed: "destructive",
 };
+
+/**
+ * Render a token amount with significant figures only — never the full 18
+ * decimals of an on-chain balance. Large amounts collapse to a short suffix
+ * (e.g. 60540.764190119038581637 -> "60.5k") via thirdweb's number util.
+ */
+function formatTokenAmount(raw: string | null): string {
+  if (raw == null) {
+    return "—";
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return raw;
+  }
+
+  if (value !== 0 && Math.abs(value) < 1000) {
+    return formatNumber(value, 4).toString();
+  }
+
+  return shortenLargeNumber(value);
+}
+
+function PayerCell({ address }: { address: string | null }) {
+  if (!address) {
+    return <span className="text-muted-foreground text-xs">Unknown</span>;
+  }
+
+  const blobbie = <Blobbie address={address} size={24} className="rounded-full" />;
+  const shortAddress = (
+    <span className="font-mono text-xs">{shortenAddress(address)}</span>
+  );
+
+  // Without a client id we can't resolve social profiles, so fall back to a
+  // deterministic Blobbie + shortened address.
+  if (!thirdwebClient) {
+    return (
+      <div className="flex items-center gap-2">
+        {blobbie}
+        {shortAddress}
+      </div>
+    );
+  }
+
+  return (
+    <AccountProvider address={address} client={thirdwebClient}>
+      <div className="flex items-center gap-2">
+        <AccountAvatar
+          className="size-6 rounded-full object-cover"
+          loadingComponent={blobbie}
+          fallbackComponent={blobbie}
+        />
+        <AccountName
+          className="text-xs"
+          loadingComponent={shortAddress}
+          fallbackComponent={shortAddress}
+        />
+      </div>
+    </AccountProvider>
+  );
+}
 
 function readStoredGithubToken(githubLogin?: string) {
   if (!githubLogin || typeof window === "undefined") {
@@ -703,9 +767,11 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                       <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{receipt.payerAddress ?? "Unknown"}</TableCell>
                   <TableCell>
-                    {receipt.amountToken ?? "—"} {receipt.tokenSymbol ?? ""}
+                    <PayerCell address={receipt.payerAddress} />
+                  </TableCell>
+                  <TableCell>
+                    {formatTokenAmount(receipt.amountToken)} {receipt.tokenSymbol ?? ""}
                     {receipt.amountUsd
                       ? ` (≈ $${Number(receipt.amountUsd).toFixed(2)})`
                       : ""}
