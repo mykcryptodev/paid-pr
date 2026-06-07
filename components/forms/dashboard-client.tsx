@@ -34,10 +34,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 type RepoConfig = {
+  githubInstallationId: number;
   repoFullName: string;
   priceUsdc: string;
   recipientAddress: string;
   enabled: boolean;
+};
+
+type GithubInstallation = {
+  installationId: number;
+  accountLogin: string;
+  accountType: string;
 };
 
 type PaymentReceipt = {
@@ -58,6 +65,7 @@ type InstallationsResponse = {
     };
     defaultWalletAddress?: string;
   };
+  installations: GithubInstallation[];
   repoConfigs: RepoConfig[];
   paymentReceipts: PaymentReceipt[];
   syncStatus?: {
@@ -71,7 +79,6 @@ type InstallationsResponse = {
 
 type ErrorResponse = {
   error?: string;
-  warning?: string;
 };
 
 type DashboardClientProps = {
@@ -108,6 +115,20 @@ function storeGithubToken(githubLogin: string | undefined, token: string) {
   );
 }
 
+function getGitHubInstallationSettingsUrl(
+  installation: GithubInstallation | undefined,
+) {
+  if (!installation) {
+    return "https://github.com/settings/installations";
+  }
+
+  if (installation.accountType.toLowerCase() === "organization") {
+    return `https://github.com/organizations/${installation.accountLogin}/settings/installations/${installation.installationId}`;
+  }
+
+  return `https://github.com/settings/installations/${installation.installationId}`;
+}
+
 export function DashboardClient({ installationId }: DashboardClientProps) {
   const { authenticated, getAccessToken, login, logout, ready, user } = usePrivy();
   const { identityToken } = useIdentityToken();
@@ -124,7 +145,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   const [repoPendingUninstall, setRepoPendingUninstall] = useState<string | null>(
     null,
   );
-  const [uninstallingRepo, setUninstallingRepo] = useState<string | null>(null);
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
   const githubLogin =
     data?.user.github?.githubLogin ?? user?.github?.username ?? undefined;
@@ -216,6 +236,25 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
     [data, selectedRepo],
   );
+  const pendingUninstallConfig = useMemo(
+    () =>
+      data?.repoConfigs.find(
+        (config) => config.repoFullName === repoPendingUninstall,
+      ),
+    [data, repoPendingUninstall],
+  );
+  const pendingUninstallInstallation = useMemo(
+    () =>
+      data?.installations.find(
+        (installation) =>
+          installation.installationId ===
+          pendingUninstallConfig?.githubInstallationId,
+      ),
+    [data, pendingUninstallConfig],
+  );
+  const pendingUninstallUrl = getGitHubInstallationSettingsUrl(
+    pendingUninstallInstallation,
+  );
   const syncDetail = data?.syncStatus
     ? [
         `sync=${data.syncStatus.reason ?? (data.syncStatus.synced ? "synced" : "not_synced")}`,
@@ -252,54 +291,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     setRecipientAddress(config.recipientAddress);
     setEnabled(config.enabled);
     setTrustedContributors("");
-  }
-
-  async function uninstallRepo(repoFullName: string) {
-    setMessage(null);
-
-    if (!effectiveGithubOAuthToken) {
-      setMessage("Authorize GitHub, then confirm uninstall again.");
-      setRepoPendingUninstall(null);
-      try {
-        await reauthorize({ provider: "github" });
-      } catch (error) {
-        setMessage(
-          error instanceof Error ? error.message : "Unable to authorize GitHub.",
-        );
-      }
-      return;
-    }
-
-    setUninstallingRepo(repoFullName);
-
-    try {
-      const response = await authFetch(
-        `/api/github/installations/repo?repo=${encodeURIComponent(repoFullName)}`,
-        { method: "DELETE" },
-      );
-      const payload = (await response.json()) as ErrorResponse;
-
-      if (!response.ok) {
-        setMessage(payload.error ?? "Unable to uninstall repository.");
-        setRepoPendingUninstall(null);
-        return;
-      }
-
-      if (selectedRepo === repoFullName) {
-        setSelectedRepo("");
-        setTrustedContributors("");
-      }
-
-      setMessage(
-        payload.warning
-          ? `Uninstalled PaidPR from ${repoFullName}. ${payload.warning}`
-          : `Uninstalled PaidPR from ${repoFullName}.`,
-      );
-      setRepoPendingUninstall(null);
-      await load();
-    } finally {
-      setUninstallingRepo(null);
-    }
   }
 
   async function saveConfig() {
@@ -392,7 +383,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 variant="ghost"
                 size="icon"
                 className="shrink-0 text-muted-foreground hover:text-destructive"
-                disabled={uninstallingRepo === config.repoFullName}
                 aria-label={`Uninstall PaidPR from ${config.repoFullName}`}
                 onClick={() => setRepoPendingUninstall(config.repoFullName)}
               >
@@ -525,7 +515,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       <AlertDialog
         open={Boolean(repoPendingUninstall)}
         onOpenChange={(open) => {
-          if (!open && !uninstallingRepo) {
+          if (!open) {
             setRepoPendingUninstall(null);
           }
         }}
@@ -534,26 +524,28 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Uninstall PaidPR?</AlertDialogTitle>
             <AlertDialogDescription>
-              PaidPR will lose access to{" "}
-              <span className="font-mono">{repoPendingUninstall}</span>. You can
-              reinstall it later from GitHub if needed.
+              GitHub will open the PaidPR app installation settings for{" "}
+              <span className="font-mono">{repoPendingUninstall}</span>. Remove
+              this repository from the app there, then return here and refresh.
+              GitHub will send PaidPR a webhook to clean up this dashboard.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={Boolean(uninstallingRepo)}>
-              Cancel
-            </AlertDialogCancel>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!repoPendingUninstall || Boolean(uninstallingRepo)}
-              onClick={() => {
-                if (repoPendingUninstall) {
-                  void uninstallRepo(repoPendingUninstall);
-                }
-              }}
-            >
-              {uninstallingRepo ? "Uninstalling..." : "Uninstall"}
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button asChild variant="destructive" disabled={!repoPendingUninstall}>
+              <a
+                href={pendingUninstallUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => {
+                  setMessage(
+                    "Finish uninstalling in GitHub, then refresh this dashboard after GitHub sends the webhook.",
+                  );
+                  setRepoPendingUninstall(null);
+                }}
+              >
+                Open GitHub settings
+              </a>
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

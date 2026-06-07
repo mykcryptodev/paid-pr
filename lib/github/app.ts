@@ -205,50 +205,6 @@ export async function canAuthenticatedUserAccessRepository(input: {
   await octokit.repos.get({ owner, repo });
 }
 
-export async function getAuthenticatedUserRepositoryPermissions(input: {
-  githubOAuthToken: string;
-  repoFullName: string;
-}) {
-  const [owner, repo] = input.repoFullName.split("/");
-
-  if (!owner || !repo) {
-    throw new Error("Invalid repository name.");
-  }
-
-  const octokit = new Octokit({ auth: input.githubOAuthToken });
-  const { data } = await octokit.repos.get({ owner, repo });
-
-  return {
-    admin: Boolean(data.permissions?.admin),
-    maintain: Boolean(data.permissions?.maintain),
-    push: Boolean(data.permissions?.push),
-  };
-}
-
-export async function removeRepositoryFromInstallation(input: {
-  installationId: number;
-  repoFullName: string;
-  githubOAuthToken: string;
-}) {
-  const [owner, repo] = input.repoFullName.split("/");
-
-  if (!owner || !repo) {
-    throw new Error("Invalid repository name.");
-  }
-
-  const octokit = await getInstallationOctokit(input.installationId);
-  const { data: repository } = await octokit.repos.get({ owner, repo });
-  const userOctokit = new Octokit({ auth: input.githubOAuthToken });
-
-  await userOctokit.request(
-    "DELETE /user/installations/{installation_id}/repositories/{repository_id}",
-    {
-      installation_id: input.installationId,
-      repository_id: repository.id,
-    },
-  );
-}
-
 export async function createPullRequest(input: {
   installationId: number;
   repoFullName: string;
