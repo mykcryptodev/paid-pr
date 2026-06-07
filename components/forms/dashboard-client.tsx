@@ -664,7 +664,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           <CardTitle>Repo payment config</CardTitle>
           <CardDescription>
             Contributors pay in USDC by default. Use advanced settings to
-            change the token, price mode, transfer method, or price feed.
+            change the token, transfer method, or price feed.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -674,11 +674,40 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>
-              {priceMode === "usd"
-                ? "Price per PR (USD)"
-                : `Price per PR (${paymentTokenSymbol})`}
-            </Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label>
+                {priceMode === "usd"
+                  ? "Price per PR (USD)"
+                  : `Price per PR (${paymentTokenSymbol})`}
+              </Label>
+              <div className="flex shrink-0 items-center gap-2 text-sm">
+                <span
+                  className={
+                    priceMode === "token"
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {paymentTokenSymbol}
+                </span>
+                <Switch
+                  checked={priceMode === "usd"}
+                  onCheckedChange={(checked) =>
+                    setPriceMode(checked ? "usd" : "token")
+                  }
+                  aria-label="Toggle between token and USD pricing"
+                />
+                <span
+                  className={
+                    priceMode === "usd"
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground"
+                  }
+                >
+                  USD
+                </span>
+              </div>
+            </div>
             <Input
               inputMode="decimal"
               value={priceAmount}
@@ -827,20 +856,6 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                       ) : null}
                     </div>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Price mode</Label>
-                  <select
-                    className="h-10 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                    value={priceMode}
-                    onChange={(event) =>
-                      setPriceMode(event.target.value as "usd" | "token")
-                    }
-                  >
-                    <option value="token">Fixed token amount</option>
-                    <option value="usd">Fixed USD (converted at pay time)</option>
-                  </select>
                 </div>
 
                 <div className="space-y-2">
