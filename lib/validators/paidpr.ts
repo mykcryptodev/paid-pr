@@ -49,7 +49,7 @@ export const updateConfigSchema = z.object({
   repoFullName: repoFullNameSchema,
   recipientAddress: walletAddressSchema,
   enabled: z.boolean().default(true),
-  priceMode: priceModeSchema.default("usd"),
+  priceMode: priceModeSchema.default("token"),
   priceAmount: priceAmountSchema,
   // The payment token. The server re-resolves symbol/decimals/EIP-712 domain
   // on-chain, so callers only need to supply the address (and optionally the

@@ -55,8 +55,9 @@ export const repoConfigs = pgTable(
       }),
     repoFullName: text("repo_full_name").notNull(),
     // Pricing: maintainers either fix a USD price (converted to token units at
-    // payment time via the price oracle) or a fixed token amount.
-    priceMode: text("price_mode").notNull().default("usd"), // "usd" | "token"
+    // payment time via the price oracle) or a fixed token amount. Defaults to a
+    // fixed token amount (0.05 USDC); USD mode lives under advanced settings.
+    priceMode: text("price_mode").notNull().default("token"), // "usd" | "token"
     priceAmount: numeric("price_amount", { precision: 38, scale: 18 })
       .notNull()
       .default("0.05"),
