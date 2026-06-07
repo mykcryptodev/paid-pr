@@ -137,7 +137,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   );
   const effectiveGithubOAuthToken = githubOAuthToken ?? storedGithubOAuthToken;
 
-  const { reauthorize } = useOAuthTokens({
+  useOAuthTokens({
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
@@ -387,21 +387,13 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
             <Button variant="secondary" onClick={() => void load()}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
-            {shouldShowGitHubAuthorization &&
-              (effectiveGithubOAuthToken ? (
-                <Button asChild variant="outline">
-                  <a href={addRepoUrl} target="_blank" rel="noreferrer">
-                    Add repo
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => void reauthorize({ provider: "github" })}
-                >
-                  Authorize GitHub
-                </Button>
-              ))}
+            {shouldShowGitHubAuthorization && (
+              <Button asChild variant="outline">
+                <a href={addRepoUrl} target="_blank" rel="noreferrer">
+                  Add repo
+                </a>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
