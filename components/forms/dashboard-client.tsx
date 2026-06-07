@@ -77,6 +77,36 @@ type DashboardClientProps = {
   installationId?: string;
 };
 
+const githubTokenStorageKey = "paidpr.githubOAuthToken";
+
+function readStoredGithubToken(githubLogin?: string) {
+  if (!githubLogin || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = window.sessionStorage.getItem(githubTokenStorageKey);
+    const parsed = stored
+      ? (JSON.parse(stored) as { githubLogin?: string; token?: string })
+      : null;
+
+    return parsed?.githubLogin === githubLogin ? parsed.token ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeGithubToken(githubLogin: string | undefined, token: string) {
+  if (!githubLogin || typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    githubTokenStorageKey,
+    JSON.stringify({ githubLogin, token }),
+  );
+}
+
 export function DashboardClient({ installationId }: DashboardClientProps) {
   const { authenticated, getAccessToken, login, logout, ready, user } = usePrivy();
   const { identityToken } = useIdentityToken();
@@ -95,11 +125,19 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   );
   const [uninstallingRepo, setUninstallingRepo] = useState<string | null>(null);
   const [githubOAuthToken, setGithubOAuthToken] = useState<string | null>(null);
+  const githubLogin =
+    data?.user.github?.githubLogin ?? user?.github?.username ?? undefined;
+  const storedGithubOAuthToken = useMemo(
+    () => readStoredGithubToken(githubLogin),
+    [githubLogin],
+  );
+  const effectiveGithubOAuthToken = githubOAuthToken ?? storedGithubOAuthToken;
 
   const { reauthorize } = useOAuthTokens({
     onOAuthTokenGrant: ({ oAuthTokens }) => {
       if (oAuthTokens.provider === "github") {
         setGithubOAuthToken(oAuthTokens.accessToken);
+        storeGithubToken(githubLogin, oAuthTokens.accessToken);
         setMessage("GitHub authorized. Refreshing repositories...");
       }
     },
@@ -114,7 +152,9 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         "content-type": "application/json",
         ...(identityToken ? { "privy-id-token": identityToken } : {}),
         ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-        ...(githubOAuthToken ? { "github-oauth-token": githubOAuthToken } : {}),
+        ...(effectiveGithubOAuthToken
+          ? { "github-oauth-token": effectiveGithubOAuthToken }
+          : {}),
         ...init?.headers,
       },
     });
@@ -169,7 +209,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated, identityToken, installationId, githubOAuthToken]);
+  }, [authenticated, identityToken, installationId, effectiveGithubOAuthToken]);
 
   const selectedConfig = useMemo(
     () => data?.repoConfigs.find((config) => config.repoFullName === selectedRepo),
@@ -195,7 +235,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
       data?.repoConfigs.length === 0 &&
       data?.syncStatus?.reason === "missing_github_oauth_token");
   const signedInLabel =
-    data?.user.github?.githubLogin ?? user?.github?.username ?? user?.id ?? "Privy user";
+    githubLogin ?? user?.id ?? "Privy user";
 
   function chooseRepo(repoFullName: string) {
     const config = data?.repoConfigs.find(
@@ -216,9 +256,16 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
   async function uninstallRepo(repoFullName: string) {
     setMessage(null);
 
-    if (!githubOAuthToken) {
-      setMessage("Authorize GitHub before uninstalling a repository.");
+    if (!effectiveGithubOAuthToken) {
+      setMessage("Authorize GitHub, then confirm uninstall again.");
       setRepoPendingUninstall(null);
+      try {
+        await reauthorize({ provider: "github" });
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Unable to authorize GitHub.",
+        );
+      }
       return;
     }
 
@@ -375,7 +422,7 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
                 variant="outline"
                 onClick={() => void reauthorize({ provider: "github" })}
               >
-                {githubOAuthToken ? "Re-authorize GitHub" : "Authorize GitHub"}
+                {effectiveGithubOAuthToken ? "Re-authorize GitHub" : "Authorize GitHub"}
               </Button>
             )}
           </div>
