@@ -318,3 +318,42 @@ export async function closePullRequestWithComment(input: {
     state: "closed",
   });
 }
+
+export type PullRequestStatus = "merged" | "open" | "closed" | "draft";
+
+export async function getPullRequestStatus(input: {
+  installationId: number;
+  repoFullName: string;
+  prNumber: number;
+}): Promise<PullRequestStatus | null> {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    return null;
+  }
+
+  try {
+    const octokit = await getInstallationOctokit(input.installationId);
+    const { data } = await octokit.pulls.get({
+      owner,
+      repo,
+      pull_number: input.prNumber,
+    });
+
+    if (data.merged_at) {
+      return "merged";
+    }
+
+    if (data.state === "closed") {
+      return "closed";
+    }
+
+    if (data.draft) {
+      return "draft";
+    }
+
+    return "open";
+  } catch {
+    return null;
+  }
+}
