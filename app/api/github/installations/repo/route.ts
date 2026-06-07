@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { removeRepoFromInstallation } from "@/lib/db/repositories";
 import {
   getAuthenticatedGithubUser,
+  getAuthenticatedUserRepositoryPermissions,
   removeRepositoryFromInstallation,
 } from "@/lib/github/app";
 import { requireMaintainerForRepo } from "@/lib/privy/authorization";
@@ -69,8 +70,26 @@ function isMissingAppInstallationError(error: unknown) {
   );
 }
 
+function isRepositoryRemovalRequest(error: unknown) {
+  const githubError = error as GithubHttpError;
+
+  return (
+    githubError.request?.method === "DELETE" &&
+    githubError.request.url?.includes("/user/installations/") &&
+    githubError.request.url?.includes("/repositories/")
+  );
+}
+
+function isGithubRepositoryRemovalBlockedError(error: unknown) {
+  const githubError = error as GithubHttpError;
+  const status = githubError.status ?? githubError.response?.status;
+
+  return isRepositoryRemovalRequest(error) && (status === 403 || status === 422);
+}
+
 export async function DELETE(request: Request) {
   let repoFullName: string | null = null;
+  let githubRemovalWarning: string | undefined;
 
   try {
     const url = new URL(request.url);
@@ -95,6 +114,18 @@ export async function DELETE(request: Request) {
       throw new AuthError("GitHub authorization does not match your Privy user.", 403);
     }
 
+    const permissions = await getAuthenticatedUserRepositoryPermissions({
+      githubOAuthToken,
+      repoFullName,
+    });
+
+    if (!permissions.admin) {
+      throw new AuthError(
+        "Your GitHub account must have admin access to uninstall PaidPR from this repository.",
+        403,
+      );
+    }
+
     if (installation.repositories.includes(repoFullName)) {
       try {
         await removeRepositoryFromInstallation({
@@ -103,11 +134,15 @@ export async function DELETE(request: Request) {
           githubOAuthToken,
         });
       } catch (error) {
-        if (!isMissingAppInstallationError(error)) {
+        if (isGithubRepositoryRemovalBlockedError(error)) {
+          githubRemovalWarning =
+            "PaidPR was removed locally, but GitHub did not detach the app from the repository. GitHub's repository removal API requires a classic PAT with repo scope; manage the app installation in GitHub settings to fully detach it.";
+          logDeleteRepoError(error, repoFullName);
+        } else if (!isMissingAppInstallationError(error)) {
           throw error;
+        } else {
+          logDeleteRepoError(error, repoFullName);
         }
-
-        logDeleteRepoError(error, repoFullName);
       }
     }
 
@@ -126,6 +161,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({
       repoFullName,
       remainingRepos: updatedInstallation.repositories,
+      warning: githubRemovalWarning,
     });
   } catch (error) {
     const response = authErrorResponse(error);

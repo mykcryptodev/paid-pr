@@ -205,6 +205,26 @@ export async function canAuthenticatedUserAccessRepository(input: {
   await octokit.repos.get({ owner, repo });
 }
 
+export async function getAuthenticatedUserRepositoryPermissions(input: {
+  githubOAuthToken: string;
+  repoFullName: string;
+}) {
+  const [owner, repo] = input.repoFullName.split("/");
+
+  if (!owner || !repo) {
+    throw new Error("Invalid repository name.");
+  }
+
+  const octokit = new Octokit({ auth: input.githubOAuthToken });
+  const { data } = await octokit.repos.get({ owner, repo });
+
+  return {
+    admin: Boolean(data.permissions?.admin),
+    maintain: Boolean(data.permissions?.maintain),
+    push: Boolean(data.permissions?.push),
+  };
+}
+
 export async function removeRepositoryFromInstallation(input: {
   installationId: number;
   repoFullName: string;

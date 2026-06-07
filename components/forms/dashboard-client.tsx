@@ -71,6 +71,7 @@ type InstallationsResponse = {
 
 type ErrorResponse = {
   error?: string;
+  warning?: string;
 };
 
 type DashboardClientProps = {
@@ -289,7 +290,11 @@ export function DashboardClient({ installationId }: DashboardClientProps) {
         setTrustedContributors("");
       }
 
-      setMessage(`Uninstalled PaidPR from ${repoFullName}.`);
+      setMessage(
+        payload.warning
+          ? `Uninstalled PaidPR from ${repoFullName}. ${payload.warning}`
+          : `Uninstalled PaidPR from ${repoFullName}.`,
+      );
       setRepoPendingUninstall(null);
       await load();
     } finally {
