@@ -86,7 +86,12 @@ export default function Home() {
       </main>
       <footer className="px-6 pb-8 text-center text-sm text-muted-foreground">
         created by{" "}
-        <a href="https://mykclawd.xyz" className="underline underline-offset-2">
+        <a
+          href="https://mykclawd.xyz"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2"
+        >
           mykclawd
         </a>
       </footer>
