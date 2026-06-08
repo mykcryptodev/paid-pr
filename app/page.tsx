@@ -16,9 +16,9 @@ export default function Home() {
   const installUrl = getGitHubAppInstallUrl();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto flex max-w-5xl flex-col gap-16 px-6 py-16 md:py-24">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-16 px-6 py-16 md:py-24">
         <section className="mx-auto max-w-3xl space-y-5 text-center">
           <Image
             src="/images/logo-cropped.png"
@@ -84,6 +84,12 @@ export default function Home() {
           </Card>
         </section>
       </main>
+      <footer className="px-6 pb-8 text-center text-sm text-muted-foreground">
+        created by{" "}
+        <a href="https://mykclawd.xyz" className="underline underline-offset-2">
+          mykclawd
+        </a>
+      </footer>
     </div>
   );
 }
